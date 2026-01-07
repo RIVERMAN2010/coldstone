@@ -7,6 +7,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 unsigned int Scene::shaderProgram = 0;
+unsigned int Scene::doubleSidedProgram = 0;
 unsigned int Scene::skyProgram = 0;
 Mesh Scene::floorMesh;
 Mesh Scene::characterMesh;
@@ -87,17 +88,24 @@ void Scene::Draw(const glm::mat4& view, const glm::mat4& projection, const glm::
     glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D, hdriTex);
     glUniform1i(glGetUniformLocation(shaderProgram, "skybox"), 1);
 
-    ResetMaterialUniforms(shaderProgram);
+    glUseProgram(doubleSidedProgram);
+    glUniformMatrix4fv(glGetUniformLocation(doubleSidedProgram, "view"), 1, GL_FALSE, &view[0][0]);
+    glUniformMatrix4fv(glGetUniformLocation(doubleSidedProgram, "projection"), 1, GL_FALSE, &projection[0][0]);
+    glUniform3fv(glGetUniformLocation(doubleSidedProgram, "viewPos"), 1, &camPos[0]);
+    glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D, hdriTex);
+    glUniform1i(glGetUniformLocation(doubleSidedProgram, "skybox"), 1);
+
+    ResetMaterialUniforms(doubleSidedProgram);
     glm::mat4 model = glm::mat4(1.0f);
-    glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "model"), 1, GL_FALSE, &model[0][0]);
-    glUniform1f(glGetUniformLocation(shaderProgram, "material.roughness"), 0.8f);
-    glUniform1i(glGetUniformLocation(shaderProgram, "useTexture"), 1);
+    glUniformMatrix4fv(glGetUniformLocation(doubleSidedProgram, "model"), 1, GL_FALSE, &model[0][0]);
+    glUniform1f(glGetUniformLocation(doubleSidedProgram, "material.roughness"), 0.8f);
+    glUniform1i(glGetUniformLocation(doubleSidedProgram, "useTexture"), 1);
     glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, whiteTex);
-    glUniform1i(glGetUniformLocation(shaderProgram, "tex1"), 0);
+    glUniform1i(glGetUniformLocation(doubleSidedProgram, "tex1"), 0);
     floorMesh.Draw();
 
-    glUniform1i(glGetUniformLocation(shaderProgram, "useTexture"), 0);
-    glFrontFace(GL_CW);
+    ResetMaterialUniforms(doubleSidedProgram);
+    model = glm::mat4(1.0f);
 
     for (const auto& obj : testObjects) {
         ResetMaterialUniforms(shaderProgram);
@@ -117,19 +125,27 @@ void Scene::Draw(const glm::mat4& view, const glm::mat4& projection, const glm::
         cubeMesh.Draw();
         if (obj.material.alpha < 1.0f) glDepthMask(GL_TRUE);
     }
-    glFrontFace(GL_CCW);
     ResetMaterialUniforms(shaderProgram); 
 
+    glUseProgram(doubleSidedProgram);
+    glUniformMatrix4fv(glGetUniformLocation(doubleSidedProgram, "view"), 1, GL_FALSE, &view[0][0]);
+    glUniformMatrix4fv(glGetUniformLocation(doubleSidedProgram, "projection"), 1, GL_FALSE, &projection[0][0]);
+    glUniform3fv(glGetUniformLocation(doubleSidedProgram, "viewPos"), 1, &camPos[0]);
+    glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D, hdriTex);
+    glUniform1i(glGetUniformLocation(doubleSidedProgram, "skybox"), 1);
+
+    ResetMaterialUniforms(doubleSidedProgram);
+
     model = glm::mat4(1.0f);
-    glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "model"), 1, GL_FALSE, &model[0][0]);
+    glUniformMatrix4fv(glGetUniformLocation(doubleSidedProgram, "model"), 1, GL_FALSE, &model[0][0]);
 
-    glUniform3f(glGetUniformLocation(shaderProgram, "material.albedo"), 1.0f, 1.0f, 1.0f);
-    glUniform1f(glGetUniformLocation(shaderProgram, "material.metallic"), 0.0f);
-    glUniform1f(glGetUniformLocation(shaderProgram, "material.roughness"), 0.8f);
-    glUniform3f(glGetUniformLocation(shaderProgram, "material.emission"), 0.0f, 0.0f, 0.0f);
-    glUniform1f(glGetUniformLocation(shaderProgram, "material.alpha"), 1.0f);
+    glUniform3f(glGetUniformLocation(doubleSidedProgram, "material.albedo"), 1.0f, 1.0f, 1.0f);
+    glUniform1f(glGetUniformLocation(doubleSidedProgram, "material.metallic"), 0.0f);
+    glUniform1f(glGetUniformLocation(doubleSidedProgram, "material.roughness"), 0.8f);
+    glUniform3f(glGetUniformLocation(doubleSidedProgram, "material.emission"), 0.0f, 0.0f, 0.0f);
+    glUniform1f(glGetUniformLocation(doubleSidedProgram, "material.alpha"), 1.0f);
 
-    glUniform1i(glGetUniformLocation(shaderProgram, "useTexture"), 1);
+    glUniform1i(glGetUniformLocation(doubleSidedProgram, "useTexture"), 1);
 
     unsigned int texToUse = whiteTex;
     if (characterMesh.textureID != 0) {
@@ -138,7 +154,7 @@ void Scene::Draw(const glm::mat4& view, const glm::mat4& projection, const glm::
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, texToUse);
-    glUniform1i(glGetUniformLocation(shaderProgram, "tex1"), 0);
+    glUniform1i(glGetUniformLocation(doubleSidedProgram, "tex1"), 0);
 
     characterMesh.Draw();
 }
@@ -152,6 +168,10 @@ void Scene::SetupShaders() {
     unsigned int fs = Compile(fsSrc, GL_FRAGMENT_SHADER);
     shaderProgram = glCreateProgram();
     glAttachShader(shaderProgram, vs); glAttachShader(shaderProgram, fs); glLinkProgram(shaderProgram);
+
+    unsigned int fsDouble = Compile(fsSrcDoubleSided, GL_FRAGMENT_SHADER);
+    doubleSidedProgram = glCreateProgram();
+    glAttachShader(doubleSidedProgram, vs); glAttachShader(doubleSidedProgram, fsDouble); glLinkProgram(doubleSidedProgram);
 
     unsigned int vs2 = Compile(vsSky, GL_VERTEX_SHADER);
     unsigned int fs2 = Compile(fsSky, GL_FRAGMENT_SHADER);

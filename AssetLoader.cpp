@@ -98,17 +98,24 @@ Mesh AssetLoader::LoadMesh(const std::string& filename) {
                 std::string texPath = str.C_Str();
                 Log(std::format("Processing Texture Path: {}", texPath));
 
-                if (texPath.length() > 0 && texPath[0] == '*') {
+                Log(std::format("Scene contains {} embedded textures.", scene->mNumTextures));
+                const aiTexture* embeddedTex = scene->GetEmbeddedTexture(texPath.c_str());
+
+                if (!embeddedTex && texPath.length() > 0 && texPath[0] == '*') {
                     unsigned int texIndex = (unsigned int)atoi(&texPath[1]);
                     if (texIndex < scene->mNumTextures) {
-                        aiTexture* embeddedTex = scene->mTextures[texIndex];
-                        if (embeddedTex->mHeight == 0) {
-                            Log(std::format("Found embedded compressed texture at index {}", texIndex));
-                            mesh.textureID = MainDevIL::LoadTextureFromMemory(embeddedTex->pcData, embeddedTex->mWidth);
-                        }
-                        else {
-                            Log("Embedded raw texture data. skip");
-                        }
+                        embeddedTex = scene->mTextures[texIndex];
+                    }
+                }
+
+                if (embeddedTex) {
+                    if (embeddedTex->mHeight == 0) {
+                        Log(std::format("Found embedded compressed texture (Size: {} bytes).", embeddedTex->mWidth));
+                        mesh.textureID = MainDevIL::LoadTextureFromMemory(embeddedTex->pcData, embeddedTex->mWidth);
+                        if (mesh.textureID == 0) Log("Error: Failed to decode embedded texture from memory.");
+                    }
+                    else {
+                        Log("Found embedded raw texture (unsupported auto-load).");
                     }
                 }
                 else {

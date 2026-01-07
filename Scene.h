@@ -16,6 +16,7 @@ private:
     static void ResetMaterialUniforms(unsigned int shader);
 
     static unsigned int shaderProgram;
+    static unsigned int doubleSidedProgram;
     static unsigned int skyProgram;
 
     static Mesh floorMesh;

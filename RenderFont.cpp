@@ -34,7 +34,6 @@ void RenderFont::UpdateText(const std::string& text) {
 void RenderFont::Draw(int screenWidth, int screenHeight) {
     if (!initialized || currentText.empty()) return;
 
-    glUseProgram(0);
     glPushAttrib(GL_ALL_ATTRIB_BITS);
 
     glMatrixMode(GL_PROJECTION);
