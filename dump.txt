@@ -1,0 +1,1261 @@
+File: .\AssetLoader.cpp
+
+#include "AssetLoader.h"
+#include "Utils.h"
+#include "MainDevIL.h"
+#include <assimp/Importer.hpp>
+#include <assimp/scene.h>
+#include <assimp/postprocess.h>
+#include <GL/glew.h>
+#include <filesystem>
+#include <format>
+
+#pragma comment(lib, "assimp-vc143-mt.lib")
+
+std::vector<std::string> AssetLoader::assetDirs;
+
+void Mesh::Setup() {
+    glGenVertexArrays(1, &VAO);
+    glGenBuffers(1, &VBO);
+    glGenBuffers(1, &EBO);
+
+    glBindVertexArray(VAO);
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+    glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(Vertex), &vertices[0], GL_STATIC_DRAW);
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), &indices[0], GL_STATIC_DRAW);
+
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, Normal));
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, TexCoords));
+}
+
+void Mesh::Draw() {
+    glBindVertexArray(VAO);
+    glDrawElements(GL_TRIANGLES, static_cast<unsigned int>(indices.size()), GL_UNSIGNED_INT, 0);
+}
+
+void AssetLoader::AddAssetDir(const std::string& path) {
+    assetDirs.push_back(path);
+}
+
+std::string AssetLoader::FindFile(const std::string& filename) {
+    if (std::filesystem::exists(filename)) return filename;
+    for (const auto& dir : assetDirs) {
+        std::string full = dir + "/" + filename;
+        if (std::filesystem::exists(full)) return full;
+    }
+    return "";
+}
+
+Mesh AssetLoader::LoadMesh(const std::string& filename) {
+    Mesh mesh;
+    std::string path = FindFile(filename);
+    if (path.empty()) {
+        Log(std::format("Asset not found: {}", filename));
+        return mesh;
+    }
+
+    Assimp::Importer importer;
+    const aiScene* scene = importer.ReadFile(path, aiProcess_Triangulate | aiProcess_FlipUVs);
+
+    if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode) {
+        Log(std::format("Assimp Error: {}", importer.GetErrorString()));
+        return mesh;
+    }
+
+    if (scene->mNumMeshes > 0) {
+        for (unsigned int m = 0; m < scene->mNumMeshes; m++) {
+            aiMesh* aMesh = scene->mMeshes[m];
+            unsigned int vertexOffset = (unsigned int)mesh.vertices.size();
+
+            for (unsigned int i = 0; i < aMesh->mNumVertices; i++) {
+                Vertex vertex;
+                vertex.Position = { aMesh->mVertices[i].x, aMesh->mVertices[i].y, aMesh->mVertices[i].z };
+                if (aMesh->HasNormals())
+                    vertex.Normal = { aMesh->mNormals[i].x, aMesh->mNormals[i].y, aMesh->mNormals[i].z };
+                if (aMesh->mTextureCoords[0])
+                    vertex.TexCoords = { aMesh->mTextureCoords[0][i].x, aMesh->mTextureCoords[0][i].y };
+                else
+                    vertex.TexCoords = { 0.0f, 0.0f };
+                mesh.vertices.push_back(vertex);
+            }
+            for (unsigned int i = 0; i < aMesh->mNumFaces; i++) {
+                aiFace face = aMesh->mFaces[i];
+                for (unsigned int j = 0; j < face.mNumIndices; j++)
+                    mesh.indices.push_back(face.mIndices[j] + vertexOffset);
+            }
+        }
+
+        if (scene->mMeshes[0]->mMaterialIndex >= 0) {
+            aiMaterial* material = scene->mMaterials[scene->mMeshes[0]->mMaterialIndex];
+            if (material->GetTextureCount(aiTextureType_DIFFUSE) > 0) {
+                aiString str;
+                material->GetTexture(aiTextureType_DIFFUSE, 0, &str);
+
+                std::string texPath = str.C_Str();
+                Log(std::format("Processing Texture Path: {}", texPath));
+
+                if (texPath.length() > 0 && texPath[0] == '*') {
+                    unsigned int texIndex = (unsigned int)atoi(&texPath[1]);
+                    if (texIndex < scene->mNumTextures) {
+                        aiTexture* embeddedTex = scene->mTextures[texIndex];
+                        if (embeddedTex->mHeight == 0) {
+                            Log(std::format("Found embedded compressed texture at index {}", texIndex));
+                            mesh.textureID = MainDevIL::LoadTextureFromMemory(embeddedTex->pcData, embeddedTex->mWidth);
+                        }
+                        else {
+                            Log("Embedded raw texture data. skip");
+                        }
+                    }
+                }
+                else {
+                    std::filesystem::path p(texPath);
+                    std::string filenameOnly = p.filename().string();
+                    std::string fullPath = FindFile(filenameOnly);
+
+                    if (!fullPath.empty()) {
+                        mesh.textureID = MainDevIL::LoadTexture(fullPath);
+                    }
+                    else {
+                        Log(std::format("Texture not found on disk: {}", filenameOnly));
+                    }
+                }
+            }
+        }
+    }
+
+    mesh.Setup();
+    Log(std::format("Mesh loaded: {}", filename));
+    return mesh;
+}
+
+
+File: .\AssetLoader.h
+
+#pragma once
+#include <string>
+#include <vector>
+#include <glm/glm.hpp>
+
+struct Vertex {
+    glm::vec3 Position;
+    glm::vec3 Normal;
+    glm::vec2 TexCoords;
+};
+
+struct Mesh {
+    std::vector<Vertex> vertices;
+    std::vector<unsigned int> indices;
+    unsigned int VAO, VBO, EBO;
+    unsigned int textureID = 0;
+    void Setup();
+    void Draw();
+};
+
+class AssetLoader {
+public:
+    static void AddAssetDir(const std::string& path);
+    static Mesh LoadMesh(const std::string& filename);
+    static std::string FindFile(const std::string& filename);
+private:
+    static std::vector<std::string> assetDirs;
+};
+
+File: .\Camera.cpp
+
+#include "Camera.h"
+#include "Input.h"
+#include "Utils.h"
+#include <algorithm>
+
+Camera::Camera(glm::vec3 startPos)
+    : Position(startPos), Pivot(0.0f, 0.0f, 0.0f), WorldUp(0.0f, 1.0f, 0.0f),
+    Yaw(-90.0f), Pitch(0.0f), Front(0.0f, 0.0f, -1.0f),
+    MovementSpeed(10.0f), MouseSensitivity(0.1f), Fov(45.0f),
+    flyMode(false), Distance(5.0f), firstMouse(true)
+{
+    Pivot = Position + Front * Distance;
+    UpdateVectors();
+}
+
+void Camera::ToggleFlightMode() {
+    flyMode = !flyMode;
+    firstMouse = true;
+
+    if (flyMode) {
+        Input::SetCursorMode(false);
+        Log("Switched to Fly Mode (WASD + Mouse)");
+    }
+    else {
+        Input::SetCursorMode(true);
+        Pivot = Position + Front * 5.0f;
+        Distance = 5.0f;
+        Log("Switched to Orbit Mode (MMB=Rotate, Shift+MMB=Pan, G=Fly)");
+    }
+}
+
+void Camera::UpdateVectors() {
+    glm::vec3 front;
+    front.x = cos(glm::radians(Yaw)) * cos(glm::radians(Pitch));
+    front.y = sin(glm::radians(Pitch));
+    front.z = sin(glm::radians(Yaw)) * cos(glm::radians(Pitch));
+    Front = glm::normalize(front);
+    Right = glm::normalize(glm::cross(Front, WorldUp));
+    Up = glm::normalize(glm::cross(Right, Front));
+}
+
+void Camera::Update(float deltaTime, int screenW, int screenH) {
+    static bool gPressed = false;
+    if (Input::IsKeyDown(GLFW_KEY_G)) {
+        if (!gPressed) { ToggleFlightMode(); gPressed = true; }
+    }
+    else { gPressed = false; }
+
+    if (flyMode)
+        UpdateFly(deltaTime);
+    else
+        UpdateOrbit(deltaTime, screenW, screenH);
+}
+
+void Camera::UpdateFly(float deltaTime) {
+    float xpos = Input::GetMouseX();
+    float ypos = Input::GetMouseY();
+
+    if (firstMouse) { lastMouseX = xpos; lastMouseY = ypos; firstMouse = false; }
+
+    float xoffset = xpos - lastMouseX;
+    float yoffset = lastMouseY - ypos;
+    lastMouseX = xpos; lastMouseY = ypos;
+
+    Yaw += xoffset * MouseSensitivity;
+    Pitch += yoffset * MouseSensitivity;
+
+    if (Pitch > 89.0f) Pitch = 89.0f;
+    if (Pitch < -89.0f) Pitch = -89.0f;
+
+    UpdateVectors();
+
+    float velocity = MovementSpeed * deltaTime;
+    if (Input::IsKeyDown(GLFW_KEY_W)) Position += Front * velocity;
+    if (Input::IsKeyDown(GLFW_KEY_S)) Position -= Front * velocity;
+    if (Input::IsKeyDown(GLFW_KEY_A)) Position -= Right * velocity;
+    if (Input::IsKeyDown(GLFW_KEY_D)) Position += Right * velocity;
+
+    if (Input::IsKeyDown(GLFW_KEY_SPACE)) Position += WorldUp * velocity;
+    if (Input::IsKeyDown(GLFW_KEY_LEFT_SHIFT)) Position -= WorldUp * velocity;
+}
+
+void Camera::UpdateOrbit(float deltaTime, int screenW, int screenH) {
+    float xpos = Input::GetMouseX();
+    float ypos = Input::GetMouseY();
+
+    if (firstMouse) { lastMouseX = xpos; lastMouseY = ypos; firstMouse = false; }
+
+    bool wrapped = false;
+    if (Input::IsMouseButtonDown(GLFW_MOUSE_BUTTON_MIDDLE)) {
+        if (xpos <= 1) {
+            Input::SetCursorPos((float)screenW - 2, ypos);
+            lastMouseX = (float)screenW - 2;
+            wrapped = true;
+        }
+        else if (xpos >= screenW - 1) {
+            Input::SetCursorPos(2, ypos);
+            lastMouseX = 2;
+            wrapped = true;
+        }
+
+        if (ypos <= 1) {
+            Input::SetCursorPos(xpos, (float)screenH - 2);
+            lastMouseY = (float)screenH - 2;
+            wrapped = true;
+        }
+        else if (ypos >= screenH - 1) {
+            Input::SetCursorPos(xpos, 2);
+            lastMouseY = 2;
+            wrapped = true;
+        }
+    }
+    if (wrapped) return;
+
+    float xoffset = xpos - lastMouseX;
+    float yoffset = lastMouseY - ypos;
+    lastMouseX = xpos; lastMouseY = ypos;
+
+    float scroll = Input::GetScrollY();
+    if (scroll != 0.0f) {
+        Distance -= scroll * 2.0f;
+        if (Distance < 1.0f) Distance = 1.0f;
+    }
+
+    if (Input::IsMouseButtonDown(GLFW_MOUSE_BUTTON_MIDDLE)) {
+        if (Input::IsKeyDown(GLFW_KEY_LEFT_SHIFT)) {
+            float panSpeed = Distance * 0.002f;
+            Pivot -= Right * (xoffset * panSpeed);
+            Pivot -= Up * (yoffset * panSpeed);
+        }
+        else {
+            Yaw -= xoffset * MouseSensitivity;
+            Pitch += yoffset * MouseSensitivity;
+
+            if (Pitch > 89.0f) Pitch = 89.0f;
+            if (Pitch < -89.0f) Pitch = -89.0f;
+            UpdateVectors();
+        }
+    }
+    Position = Pivot - (Front * Distance);
+}
+
+glm::mat4 Camera::GetViewMatrix() {
+    return glm::lookAt(Position, Position + Front, Up);
+}
+
+glm::mat4 Camera::GetProjectionMatrix(int screenW, int screenH) {
+    return glm::perspective(glm::radians(Fov), (float)screenW / (float)screenH, 0.1f, 100.0f);
+}
+
+File: .\Camera.h
+
+#pragma once
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+
+class Camera {
+public:
+    Camera(glm::vec3 startPos);
+
+    void Update(float deltaTime, int screenW, int screenH);
+    glm::mat4 GetViewMatrix();
+    glm::mat4 GetProjectionMatrix(int screenW, int screenH);
+    glm::vec3 GetPosition() const { return Position; }
+
+    void ToggleFlightMode();
+    bool IsInFlightMode() const { return flyMode; }
+
+private:
+    void UpdateOrbit(float deltaTime, int screenW, int screenH);
+    void UpdateFly(float deltaTime);
+    void UpdateVectors();
+
+    glm::vec3 Position;
+    glm::vec3 Pivot;
+    glm::vec3 Front, Up, Right, WorldUp;
+
+    float Yaw, Pitch;
+    float Distance;
+
+    float MovementSpeed;
+    float MouseSensitivity;
+    float Fov;
+    bool flyMode;
+
+    float lastMouseX, lastMouseY;
+    bool firstMouse;
+};
+
+File: .\Input.cpp
+
+#include "Input.h"
+
+GLFWwindow* Input::windowHandle = nullptr;
+float Input::scrollY = 0.0f;
+
+void Input::Initialize(GLFWwindow* window) {
+    windowHandle = window;
+    glfwSetScrollCallback(window, ScrollCallback);
+}
+
+void Input::Update() {
+    scrollY = 0.0f;
+}
+
+bool Input::IsKeyDown(int key) {
+    return glfwGetKey(windowHandle, key) == GLFW_PRESS;
+}
+
+bool Input::IsMouseButtonDown(int button) {
+    return glfwGetMouseButton(windowHandle, button) == GLFW_PRESS;
+}
+
+float Input::GetMouseX() {
+    double x, y;
+    glfwGetCursorPos(windowHandle, &x, &y);
+    return (float)x;
+}
+
+float Input::GetMouseY() {
+    double x, y;
+    glfwGetCursorPos(windowHandle, &x, &y);
+    return (float)y;
+}
+
+float Input::GetScrollY() {
+    return scrollY;
+}
+
+void Input::SetCursorMode(bool visible) {
+    if (visible) {
+        glfwSetInputMode(windowHandle, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+    }
+    else {
+        glfwSetInputMode(windowHandle, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+    }
+}
+
+void Input::SetCursorPos(float x, float y) {
+    glfwSetCursorPos(windowHandle, (double)x, (double)y);
+}
+
+void Input::ScrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
+    scrollY = (float)yoffset;
+}
+
+File: .\Input.h
+
+#pragma once
+#include <GL/glew.h>
+#include <GLFW/glfw3.h>
+
+class Input {
+public:
+    static void Initialize(GLFWwindow* window);
+    static void Update();
+
+    static bool IsKeyDown(int key);
+    static bool IsMouseButtonDown(int button);
+
+    static float GetMouseX();
+    static float GetMouseY();
+    static float GetScrollY();
+    static void SetCursorMode(bool visible);
+    static void SetCursorPos(float x, float y);
+private:
+    static void ScrollCallback(GLFWwindow* window, double xoffset, double yoffset);
+    static GLFWwindow* windowHandle;
+    static float scrollY;
+};
+
+File: .\main.cpp
+
+#include "Utils.h"
+#include "MainOpenGL.h"
+#include "RenderFont.h"
+#include "MainDevIL.h"
+#include "Input.h"
+#include "Camera.h"
+#include "Scene.h" 
+#include <chrono>
+#include <thread>
+#include <format>
+
+int main() {
+    int screenW = GetSystemMetrics(SM_CXMAXTRACK);
+    int screenH = GetSystemMetrics(SM_CYMAXTRACK);
+
+    MainOpenGL::Initialize(screenW, screenH, "Engine Start");
+    MainDevIL::Initialize();
+    RenderFont::Initialize();
+    Input::Initialize(MainOpenGL::GetWindow());
+
+    std::string exeDir = GetExeDirectory();
+    AssetLoader::AddAssetDir(exeDir);
+    AssetLoader::AddAssetDir(exeDir + "/Assets");
+
+    Scene::Initialize();
+    Camera camera(glm::vec3(0.0f, 2.0f, 10.0f));
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    double lastTime = 0.0;
+    int nbFrames = 0;
+    int currentFPS = 0;
+    const double targetFrameTime = 1.0 / 60.0;
+
+    while (!MainOpenGL::ShouldClose()) {
+        double currentTime = static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count()) / 1e9;
+        double frameStartTime = currentTime;
+
+        MainOpenGL::PollEvents();
+        MainOpenGL::GetWindowSize(screenW, screenH);
+
+        static double lastFrameT = 0.0;
+        double dt = currentTime - lastFrameT;
+        lastFrameT = currentTime;
+        camera.Update((float)dt, screenW, screenH);
+
+        glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        Scene::Draw(camera.GetViewMatrix(), camera.GetProjectionMatrix(screenW, screenH), camera.GetPosition());
+
+        RenderFont::Draw(screenW, screenH);
+
+        MainOpenGL::SwapBuffers();
+        Input::Update();
+
+        double endTime = static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count()) / 1e9;
+        double workTime = endTime - frameStartTime;
+        if (workTime < targetFrameTime) {
+            double sleepS = targetFrameTime - workTime - 0.002;
+            if (sleepS > 0) std::this_thread::sleep_for(std::chrono::milliseconds((int)(sleepS * 1000)));
+            while ((static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count()) / 1e9) - frameStartTime < targetFrameTime);
+        }
+
+        nbFrames++;
+        double now = static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count()) / 1e9;
+        if (now - lastTime >= 1.0) {
+            currentFPS = nbFrames;
+            RenderFont::UpdateText(std::format("FPS: {}", currentFPS));
+            nbFrames = 0;
+            lastTime = now;
+        }
+    }
+
+    Scene::Cleanup();
+    RenderFont::Cleanup();
+    MainOpenGL::Cleanup();
+    return 0;
+}
+
+File: .\MainDevIL.cpp
+
+[Binary or non-UTF-8 file skipped]
+
+
+File: .\MainDevIL.h
+
+#pragma once
+#include <string>
+
+class MainDevIL {
+public:
+    static void Initialize();
+    static unsigned int LoadTexture(const std::string& filepath);
+    static unsigned int LoadTextureFromMemory(void* data, unsigned int size);
+    static unsigned int CreateWhiteTexture();
+private:
+    static unsigned int LoadInternal(void* data, unsigned int size);
+};
+
+File: .\MainOpenGL.cpp
+
+#include "MainOpenGL.h"
+#include "Utils.h"
+#include <GL/glew.h>
+#define GLFW_EXPOSE_NATIVE_WIN32
+#include <GLFW/glfw3.h>
+#include <GLFW/glfw3native.h>
+#include <format>
+
+#pragma comment(lib, "opengl32.lib")
+#pragma comment(lib, "glfw3dll.lib")
+#pragma comment(lib, "glew32.lib")
+
+GLFWwindow* MainOpenGL::window = nullptr;
+
+void MainOpenGL::Initialize(int width, int height, const char* title) {
+    if (!glfwInit()) {
+        Log("Failed to initialize GLFW.");
+        return;
+    }
+
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_COMPAT_PROFILE);
+    glfwWindowHint(GLFW_MAXIMIZED, GLFW_TRUE);
+
+    window = glfwCreateWindow(width, height, title, nullptr, nullptr);
+    if (!window) {
+        Log("Failed to create GLFW window.");
+        glfwTerminate();
+        return;
+    }
+
+    glfwMakeContextCurrent(window);
+
+    if (glewInit() != GLEW_OK) {
+        Log("Failed to initialize GLEW.");
+        return;
+    }
+
+    glViewport(0, 0, width, height);
+    glEnable(GL_DEPTH_TEST);
+
+    Log(std::format("OpenGL Initialized: {}", (const char*)glGetString(GL_VERSION)));
+}
+
+bool MainOpenGL::ShouldClose() {
+    return glfwWindowShouldClose(window);
+}
+
+void MainOpenGL::SwapBuffers() {
+    glfwSwapBuffers(window);
+}
+
+void MainOpenGL::PollEvents() {
+    glfwPollEvents();
+}
+
+void MainOpenGL::Cleanup() {
+    glfwDestroyWindow(window);
+    glfwTerminate();
+}
+
+void MainOpenGL::GetWindowSize(int& width, int& height) {
+    glfwGetWindowSize(window, &width, &height);
+}
+
+void* MainOpenGL::GetNativeWindow() {
+    return glfwGetWin32Window(window);
+}
+
+GLFWwindow* MainOpenGL::GetWindow() {
+    return window;
+}
+
+
+File: .\MainOpenGL.h
+
+#pragma once
+#include <Windows.h>
+
+struct GLFWwindow;
+
+class MainOpenGL {
+public:
+    static void Initialize(int width, int height, const char* title);
+    static bool ShouldClose();
+    static void SwapBuffers();
+    static void PollEvents();
+    static void Cleanup();
+    static void GetWindowSize(int& width, int& height);
+    static void* GetNativeWindow();
+    static GLFWwindow* GetWindow();
+
+private:
+    static GLFWwindow* window;
+};
+
+File: .\Materials.h
+
+#pragma once
+#include <glm/glm.hpp>
+#include <string>
+
+struct Material {
+    std::string name;
+    glm::vec3 albedo;
+    float metallic;
+    float roughness;
+    glm::vec3 emission;
+    float alpha;
+
+    static Material Standard(glm::vec3 color, float met = 0.0f, float rough = 0.5f) {
+        return { "Std", color, met, rough, {0,0,0}, 1.0f };
+    }
+    static Material Emissive(glm::vec3 color, float strength) {
+        return { "Glow", color, 0.0f, 1.0f, color * strength, 1.0f };
+    }
+    static Material Glass(glm::vec3 color) {
+        return { "Glass", color, 0.0f, 0.1f, {0,0,0}, 0.3f };
+    }
+    static Material Uranium(glm::vec3 color) {
+        return { "Uranium", color, 0.0f, 0.2f, color * 2.0f, 0.5f };
+    }
+};
+
+File: .\RenderFont.cpp
+
+#include "RenderFont.h"
+#include <GL/glew.h>
+#include <Windows.h>
+#include <vector>
+#include <format>
+
+static unsigned int baseList = 0;
+static std::string currentText = "";
+static bool initialized = false;
+
+void RenderFont::Initialize() {
+    HDC hdc = wglGetCurrentDC();
+    if (!hdc) return;
+
+    if (baseList != 0) glDeleteLists(baseList, 96);
+    baseList = glGenLists(96);
+
+    HFONT hFont = CreateFontA(-16, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+        ANSI_CHARSET, OUT_TT_PRECIS, CLIP_DEFAULT_PRECIS,
+        ANTIALIASED_QUALITY, FF_DONTCARE | DEFAULT_PITCH, "Arial");
+
+    HFONT hOldFont = (HFONT)SelectObject(hdc, hFont);
+    wglUseFontBitmaps(hdc, 32, 96, baseList);
+    SelectObject(hdc, hOldFont);
+    DeleteObject(hFont);
+
+    initialized = true;
+}
+
+void RenderFont::UpdateText(const std::string& text) {
+    currentText = text;
+}
+
+void RenderFont::Draw(int screenWidth, int screenHeight) {
+    if (!initialized || currentText.empty()) return;
+
+    glPushAttrib(GL_ALL_ATTRIB_BITS);
+
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+
+    glOrtho(0, screenWidth, screenHeight, 0, -1, 1);
+
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glLoadIdentity();
+
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_LIGHTING);
+    glDisable(GL_TEXTURE_2D);
+    glDisable(GL_CULL_FACE);
+
+    glColor4f(0.0f, 1.0f, 0.0f, 1.0f);
+    glRasterPos2i(10, 20);
+
+    glListBase(baseList - 32);
+    glCallLists((GLsizei)currentText.length(), GL_UNSIGNED_BYTE, currentText.c_str());
+
+    glMatrixMode(GL_MODELVIEW);
+    glPopMatrix();
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+    glPopAttrib();
+}
+
+void RenderFont::Cleanup() {
+    if (baseList != 0) glDeleteLists(baseList, 96);
+}
+
+
+File: .\RenderFont.h
+
+#pragma once
+#include <string>
+
+class RenderFont {
+public:
+    static void Initialize();
+    static void UpdateText(const std::string& text);
+    static void Draw(int screenWidth, int screenHeight);
+    static void Cleanup();
+};
+
+File: .\Scene.cpp
+
+#include "Scene.h"
+#include "Shaders.h"
+#include "MainDevIL.h"
+#include "Utils.h"
+#include <GL/glew.h>
+#include <glm/gtc/type_ptr.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+
+unsigned int Scene::shaderProgram = 0;
+unsigned int Scene::skyProgram = 0;
+Mesh Scene::floorMesh;
+Mesh Scene::characterMesh;
+Mesh Scene::cubeMesh;
+unsigned int Scene::hdriTex = 0;
+unsigned int Scene::whiteTex = 0;
+std::vector<TestObject> Scene::testObjects;
+
+void Scene::Initialize() {
+    SetupShaders();
+
+    std::string hdriPath = AssetLoader::FindFile("TestHDRI.jpg");
+    hdriTex = MainDevIL::LoadTexture(hdriPath);
+    whiteTex = MainDevIL::CreateWhiteTexture();
+    if (hdriTex == 0) hdriTex = whiteTex;
+
+    float v[] = { -0.5f,-0.5f,-0.5f,0,0,-1,0,0,  0.5f,-0.5f,-0.5f,0,0,-1,1,0,  0.5f,0.5f,-0.5f,0,0,-1,1,1,
+                  0.5f,0.5f,-0.5f,0,0,-1,1,1,   -0.5f,0.5f,-0.5f,0,0,-1,0,1,   -0.5f,-0.5f,-0.5f,0,0,-1,0,0,
+                  -0.5f,-0.5f,0.5f,0,0,1,0,0,   0.5f,-0.5f,0.5f,0,0,1,1,0,    0.5f,0.5f,0.5f,0,0,1,1,1,
+                  0.5f,0.5f,0.5f,0,0,1,1,1,    -0.5f,0.5f,0.5f,0,0,1,0,1,    -0.5f,-0.5f,0.5f,0,0,1,0,0,
+                  -0.5f,0.5f,0.5f,-1,0,0,1,0,  -0.5f,0.5f,-0.5f,-1,0,0,1,1,  -0.5f,-0.5f,-0.5f,-1,0,0,0,1,
+                  -0.5f,-0.5f,-0.5f,-1,0,0,0,1, -0.5f,-0.5f,0.5f,-1,0,0,0,0,  -0.5f,0.5f,0.5f,-1,0,0,1,0,
+                  0.5f,0.5f,0.5f,1,0,0,1,0,    0.5f,0.5f,-0.5f,1,0,0,1,1,    0.5f,-0.5f,-0.5f,1,0,0,0,1,
+                  0.5f,-0.5f,-0.5f,1,0,0,0,1,   0.5f,-0.5f,0.5f,1,0,0,0,0,    0.5f,0.5f,0.5f,1,0,0,1,0,
+                  -0.5f,-0.5f,-0.5f,0,-1,0,0,1, 0.5f,-0.5f,-0.5f,0,-1,0,1,1,  0.5f,-0.5f,0.5f,0,-1,0,1,0,
+                  0.5f,-0.5f,0.5f,0,-1,0,1,0,   -0.5f,-0.5f,0.5f,0,-1,0,0,0,  -0.5f,-0.5f,-0.5f,0,-1,0,0,1,
+                  -0.5f,0.5f,-0.5f,0,1,0,0,1,   0.5f,0.5f,-0.5f,0,1,0,1,1,    0.5f,0.5f,0.5f,0,1,0,1,0,
+                  0.5f,0.5f,0.5f,0,1,0,1,0,    -0.5f,0.5f,0.5f,0,1,0,0,0,    -0.5f,0.5f,-0.5f,0,1,0,0,1 };
+    for (int i = 0; i < 36; i++) {
+        Vertex vert;
+        int off = i * 8;
+        vert.Position = { v[off],v[off + 1],v[off + 2] }; vert.Normal = { v[off + 3],v[off + 4],v[off + 5] }; vert.TexCoords = { v[off + 6],v[off + 7] };
+        cubeMesh.vertices.push_back(vert); cubeMesh.indices.push_back(i);
+    }
+    cubeMesh.Setup();
+
+    floorMesh.vertices = { {{-10,-1,10},{0,1,0},{0,0}}, {{10,-1,10},{0,1,0},{1,0}}, {{10,-1,-10},{0,1,0},{1,1}}, {{-10,-1,-10},{0,1,0},{0,1}} };
+    floorMesh.indices = { 0,1,2, 0,2,3 };
+    floorMesh.Setup();
+
+    characterMesh = AssetLoader::LoadMesh("ExportChar.fbx");
+
+    testObjects.push_back({ {-4, 1, 0}, {0,0,0}, {1,1,1}, Material::Standard({0,0,1}, 0.0f, 0.5f) });
+    testObjects.push_back({ {-2, 1, 0}, {0,45,0}, {1,1,1}, Material::Standard({0,1,0}, 0.0f, 0.5f) });
+    testObjects.push_back({ { 0, 1, 0}, {0,0,0}, {1,1,1}, Material::Standard({1,0,0}, 0.0f, 0.5f) });
+    testObjects.push_back({ { 2, 1, 0}, {45,45,0}, {0.8f,0.8f,0.8f}, Material::Standard({1,0.5f,0}, 0.0f, 0.5f) });
+    testObjects.push_back({ { 4, 1, 0}, {0,0,0}, {1,1,1}, Material::Emissive({1,1,1}, 5.0f) });
+
+    testObjects.push_back({ {-4, 3, 0}, {0,0,0}, {1,1,1}, Material::Standard({0.9f,0.9f,0.9f}, 1.0f, 0.05f) }); // Full Metal Shiny
+    testObjects.push_back({ {-2, 3, 0}, {0,0,0}, {1,1,1}, Material::Standard({0.9f,0.9f,0.9f}, 1.0f, 0.5f) }); // Metal Rough
+    testObjects.push_back({ { 0, 3, 0}, {0,0,0}, {1,1,1}, Material::Standard({0.8f,0.8f,0.8f}, 0.0f, 1.0f) }); // Rough Plastic
+    testObjects.push_back({ { 2, 3, 0}, {0,0,0}, {1,1,1}, Material::Glass({0.6f, 0.8f, 1.0f}) });
+    testObjects.push_back({ { 4, 3, 0}, {0,0,0}, {1,1,1}, Material::Uranium({0.2f, 1.0f, 0.2f}) });
+}
+
+void Scene::ResetMaterialUniforms(unsigned int shader) {
+    glUniform3f(glGetUniformLocation(shader, "material.albedo"), 1.0f, 1.0f, 1.0f);
+    glUniform1f(glGetUniformLocation(shader, "material.metallic"), 0.0f);
+    glUniform1f(glGetUniformLocation(shader, "material.roughness"), 0.5f);
+    glUniform3f(glGetUniformLocation(shader, "material.emission"), 0.0f, 0.0f, 0.0f);
+    glUniform1f(glGetUniformLocation(shader, "material.alpha"), 1.0f);
+    glUniform1i(glGetUniformLocation(shader, "useTexture"), 0);
+}
+
+void Scene::Draw(const glm::mat4& view, const glm::mat4& projection, const glm::vec3& camPos) {
+    glDepthFunc(GL_LEQUAL);
+    glUseProgram(skyProgram);
+    glUniformMatrix4fv(glGetUniformLocation(skyProgram, "view"), 1, GL_FALSE, &view[0][0]);
+    glUniformMatrix4fv(glGetUniformLocation(skyProgram, "projection"), 1, GL_FALSE, &projection[0][0]);
+    glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, hdriTex);
+    cubeMesh.Draw();
+    glDepthFunc(GL_LESS);
+
+    glUseProgram(shaderProgram);
+    glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "view"), 1, GL_FALSE, &view[0][0]);
+    glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "projection"), 1, GL_FALSE, &projection[0][0]);
+    glUniform3fv(glGetUniformLocation(shaderProgram, "viewPos"), 1, &camPos[0]);
+    glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D, hdriTex);
+    glUniform1i(glGetUniformLocation(shaderProgram, "skybox"), 1);
+
+    ResetMaterialUniforms(shaderProgram);
+    glm::mat4 model = glm::mat4(1.0f);
+    glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "model"), 1, GL_FALSE, &model[0][0]);
+    glUniform1f(glGetUniformLocation(shaderProgram, "material.roughness"), 0.8f);
+    glUniform1i(glGetUniformLocation(shaderProgram, "useTexture"), 1);
+    glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, whiteTex);
+    glUniform1i(glGetUniformLocation(shaderProgram, "tex1"), 0);
+    floorMesh.Draw();
+
+    glUniform1i(glGetUniformLocation(shaderProgram, "useTexture"), 0);
+    for (const auto& obj : testObjects) {
+        ResetMaterialUniforms(shaderProgram);
+
+        model = glm::translate(glm::mat4(1.0f), obj.position);
+        model = glm::rotate(model, glm::radians(obj.rotation.y), glm::vec3(0, 1, 0));
+        model = glm::scale(model, obj.scale);
+        glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "model"), 1, GL_FALSE, &model[0][0]);
+
+        glUniform3fv(glGetUniformLocation(shaderProgram, "material.albedo"), 1, &obj.material.albedo[0]);
+        glUniform1f(glGetUniformLocation(shaderProgram, "material.metallic"), obj.material.metallic);
+        glUniform1f(glGetUniformLocation(shaderProgram, "material.roughness"), obj.material.roughness);
+        glUniform3fv(glGetUniformLocation(shaderProgram, "material.emission"), 1, &obj.material.emission[0]);
+        glUniform1f(glGetUniformLocation(shaderProgram, "material.alpha"), obj.material.alpha);
+
+        if (obj.material.alpha < 1.0f) glDepthMask(GL_FALSE);
+        cubeMesh.Draw();
+        if (obj.material.alpha < 1.0f) glDepthMask(GL_TRUE);
+    }
+
+    ResetMaterialUniforms(shaderProgram); 
+
+    model = glm::mat4(1.0f);
+    glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "model"), 1, GL_FALSE, &model[0][0]);
+
+    glUniform3f(glGetUniformLocation(shaderProgram, "material.albedo"), 1.0f, 1.0f, 1.0f);
+    glUniform1f(glGetUniformLocation(shaderProgram, "material.metallic"), 0.0f);
+    glUniform1f(glGetUniformLocation(shaderProgram, "material.roughness"), 0.8f);
+    glUniform3f(glGetUniformLocation(shaderProgram, "material.emission"), 0.0f, 0.0f, 0.0f);
+    glUniform1f(glGetUniformLocation(shaderProgram, "material.alpha"), 1.0f);
+
+    glUniform1i(glGetUniformLocation(shaderProgram, "useTexture"), 1);
+
+    unsigned int texToUse = whiteTex;
+    if (characterMesh.textureID != 0) {
+        texToUse = characterMesh.textureID;
+    }
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, texToUse);
+    glUniform1i(glGetUniformLocation(shaderProgram, "tex1"), 0);
+
+    characterMesh.Draw();
+}
+
+void Scene::SetupShaders() {
+    auto Compile = [](const char* src, GLenum type) {
+        unsigned int s = glCreateShader(type);
+        glShaderSource(s, 1, &src, 0); glCompileShader(s); return s;
+        };
+    unsigned int vs = Compile(vsSrc, GL_VERTEX_SHADER);
+    unsigned int fs = Compile(fsSrc, GL_FRAGMENT_SHADER);
+    shaderProgram = glCreateProgram();
+    glAttachShader(shaderProgram, vs); glAttachShader(shaderProgram, fs); glLinkProgram(shaderProgram);
+
+    unsigned int vs2 = Compile(vsSky, GL_VERTEX_SHADER);
+    unsigned int fs2 = Compile(fsSky, GL_FRAGMENT_SHADER);
+    skyProgram = glCreateProgram();
+    glAttachShader(skyProgram, vs2); glAttachShader(skyProgram, fs2); glLinkProgram(skyProgram);
+}
+
+void Scene::Cleanup() {
+
+}
+
+File: .\Scene.h
+
+#pragma once
+#include <vector>
+#include <glm/glm.hpp>
+#include "Materials.h"
+#include "AssetLoader.h"
+#include "TestMaterials.h"
+
+class Scene {
+public:
+    static void Initialize();
+    static void Draw(const glm::mat4& view, const glm::mat4& projection, const glm::vec3& camPos);
+    static void Cleanup();
+
+private:
+    static void SetupShaders();
+    static void ResetMaterialUniforms(unsigned int shader);
+
+    static unsigned int shaderProgram;
+    static unsigned int skyProgram;
+
+    static Mesh floorMesh;
+    static Mesh characterMesh;
+    static Mesh cubeMesh;
+
+    static unsigned int hdriTex;
+    static unsigned int whiteTex;
+
+    static std::vector<TestObject> testObjects;
+};
+
+File: .\Shaders.h
+
+#pragma once
+
+const char* vsSrc = R"(
+#version 460 core
+layout (location = 0) in vec3 aPos;
+layout (location = 1) in vec3 aNormal;
+layout (location = 2) in vec2 aTex;
+out vec2 TexCoords;
+out vec3 Normal;
+out vec3 FragPos;
+uniform mat4 model;
+uniform mat4 view;
+uniform mat4 projection;
+void main() {
+    TexCoords = aTex;
+    Normal = mat3(transpose(inverse(model))) * aNormal;
+    FragPos = vec3(model * vec4(aPos, 1.0));
+    gl_Position = projection * view * vec4(FragPos, 1.0);
+}
+)";
+
+const char* fsSrc = R"(
+#version 460 core
+out vec4 FragColor;
+in vec2 TexCoords;
+in vec3 Normal;
+in vec3 FragPos;
+
+struct Material {
+    vec3 albedo;
+    float metallic;
+    float roughness;
+    vec3 emission;
+    float alpha;
+};
+uniform Material material;
+uniform sampler2D tex1; 
+uniform sampler2D skybox; 
+uniform vec3 viewPos;
+uniform int useTexture; 
+
+const float PI = 3.14159265359;
+
+vec2 SampleSphericalMap(vec3 v) {
+    vec2 uv = vec2(atan(v.z, v.x), asin(v.y));
+    uv *= vec2(0.1591, 0.3183); 
+    uv += 0.5;
+    return uv;
+}
+
+void main() {
+    vec3 norm = normalize(Normal);
+    if (!gl_FrontFacing) {
+        norm = -norm;
+    }
+    vec3 viewDir = normalize(viewPos - FragPos);
+    vec3 R = reflect(-viewDir, norm); 
+
+    vec3 baseColor = material.albedo;
+    if (useTexture == 1) {
+        baseColor *= texture(tex1, TexCoords).rgb;
+    }
+
+    vec2 envUV = SampleSphericalMap(normalize(R));
+    vec3 envColor = texture(skybox, envUV).rgb;
+    
+    // Simple Fresnel
+    float NdotV = max(dot(norm, viewDir), 0.0);
+    vec3 F0 = mix(vec3(0.04), baseColor, material.metallic);
+    vec3 F = F0 + (1.0 - F0) * pow(1.0 - NdotV, 5.0);
+
+    vec3 kD = (1.0 - F) * (1.0 - material.metallic);
+    
+    vec3 diffuse = kD * baseColor; 
+    vec3 specular = envColor * F * (1.0 - material.roughness); 
+
+    vec3 finalColor = diffuse * 0.5 + specular + material.emission; 
+    FragColor = vec4(finalColor, material.alpha);
+}
+)";
+
+const char* vsSky = R"(
+#version 460 core
+layout (location = 0) in vec3 aPos;
+out vec3 WorldPos;
+uniform mat4 view;
+uniform mat4 projection;
+void main() {
+    WorldPos = aPos;
+    mat4 rotView = mat4(mat3(view)); // Remove translation
+    vec4 clipPos = projection * rotView * vec4(WorldPos, 1.0);
+    gl_Position = clipPos.xyww; // Force z to 1.0
+}
+)";
+
+const char* fsSky = R"(
+#version 460 core
+out vec4 FragColor;
+in vec3 WorldPos;
+uniform sampler2D skybox;
+vec2 SampleSphericalMap(vec3 v) {
+    vec2 uv = vec2(atan(v.z, v.x), asin(v.y));
+    uv *= vec2(0.1591, 0.3183);
+    uv += 0.5;
+    return uv;
+}
+void main() {
+    vec2 uv = SampleSphericalMap(normalize(WorldPos));
+    FragColor = texture(skybox, uv);
+}
+)";
+
+File: .\TestMaterials.cpp
+
+#include "TestMaterials.h"
+#include <GL/glew.h>
+#include <glm/gtc/type_ptr.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+
+std::vector<TestObject> TestMaterials::objects;
+Mesh TestMaterials::cubeMesh;
+
+void TestMaterials::Initialize() {
+    objects.clear();
+
+    float v[] = {
+        -0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  0.0f, 0.0f,
+         0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  1.0f, 0.0f,
+         0.5f,  0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  1.0f, 1.0f,
+         0.5f,  0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  1.0f, 1.0f,
+        -0.5f,  0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  0.0f, 1.0f,
+        -0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  0.0f, 0.0f,
+
+        -0.5f, -0.5f,  0.5f,  0.0f,  0.0f, 1.0f,   0.0f, 0.0f,
+         0.5f, -0.5f,  0.5f,  0.0f,  0.0f, 1.0f,   1.0f, 0.0f,
+         0.5f,  0.5f,  0.5f,  0.0f,  0.0f, 1.0f,   1.0f, 1.0f,
+         0.5f,  0.5f,  0.5f,  0.0f,  0.0f, 1.0f,   1.0f, 1.0f,
+        -0.5f,  0.5f,  0.5f,  0.0f,  0.0f, 1.0f,   0.0f, 1.0f,
+        -0.5f, -0.5f,  0.5f,  0.0f,  0.0f, 1.0f,   0.0f, 0.0f,
+
+        -0.5f,  0.5f,  0.5f, -1.0f,  0.0f,  0.0f,  1.0f, 0.0f,
+        -0.5f,  0.5f, -0.5f, -1.0f,  0.0f,  0.0f,  1.0f, 1.0f,
+        -0.5f, -0.5f, -0.5f, -1.0f,  0.0f,  0.0f,  0.0f, 1.0f,
+        -0.5f, -0.5f, -0.5f, -1.0f,  0.0f,  0.0f,  0.0f, 1.0f,
+        -0.5f, -0.5f,  0.5f, -1.0f,  0.0f,  0.0f,  0.0f, 0.0f,
+        -0.5f,  0.5f,  0.5f, -1.0f,  0.0f,  0.0f,  1.0f, 0.0f,
+
+         0.5f,  0.5f,  0.5f,  1.0f,  0.0f,  0.0f,  1.0f, 0.0f,
+         0.5f,  0.5f, -0.5f,  1.0f,  0.0f,  0.0f,  1.0f, 1.0f,
+         0.5f, -0.5f, -0.5f,  1.0f,  0.0f,  0.0f,  0.0f, 1.0f,
+         0.5f, -0.5f, -0.5f,  1.0f,  0.0f,  0.0f,  0.0f, 1.0f,
+         0.5f, -0.5f,  0.5f,  1.0f,  0.0f,  0.0f,  0.0f, 0.0f,
+         0.5f,  0.5f,  0.5f,  1.0f,  0.0f,  0.0f,  1.0f, 0.0f,
+
+        -0.5f, -0.5f, -0.5f,  0.0f, -1.0f,  0.0f,  0.0f, 1.0f,
+         0.5f, -0.5f, -0.5f,  0.0f, -1.0f,  0.0f,  1.0f, 1.0f,
+         0.5f, -0.5f,  0.5f,  0.0f, -1.0f,  0.0f,  1.0f, 0.0f,
+         0.5f, -0.5f,  0.5f,  0.0f, -1.0f,  0.0f,  1.0f, 0.0f,
+        -0.5f, -0.5f,  0.5f,  0.0f, -1.0f,  0.0f,  0.0f, 0.0f,
+        -0.5f, -0.5f, -0.5f,  0.0f, -1.0f,  0.0f,  0.0f, 1.0f,
+
+        -0.5f,  0.5f, -0.5f,  0.0f,  1.0f,  0.0f,  0.0f, 1.0f,
+         0.5f,  0.5f, -0.5f,  0.0f,  1.0f,  0.0f,  1.0f, 1.0f,
+         0.5f,  0.5f,  0.5f,  0.0f,  1.0f,  0.0f,  1.0f, 0.0f,
+         0.5f,  0.5f,  0.5f,  0.0f,  1.0f,  0.0f,  1.0f, 0.0f,
+        -0.5f,  0.5f,  0.5f,  0.0f,  1.0f,  0.0f,  0.0f, 0.0f,
+        -0.5f,  0.5f, -0.5f,  0.0f,  1.0f,  0.0f,  0.0f, 1.0f
+    };
+
+    cubeMesh.vertices.clear();
+    cubeMesh.indices.clear();
+    for (int i = 0; i < 36; i++) {
+        Vertex vert;
+        int off = i * 8;
+        vert.Position = { v[off], v[off + 1], v[off + 2] };
+        vert.Normal = { v[off + 3], v[off + 4], v[off + 5] };
+        vert.TexCoords = { v[off + 6], v[off + 7] };
+        cubeMesh.vertices.push_back(vert);
+        cubeMesh.indices.push_back(i);
+    }
+    cubeMesh.Setup();
+
+    AddCube({ -4, 1, 0 }, { 0, 0, 0 }, { 1, 1, 1 }, Material::Standard({ 0,0,1 }, 0.0f, 0.5f));
+    AddCube({ -2, 1, 0 }, { 0, 45, 0 }, { 1, 1, 1 }, Material::Standard({ 0,1,0 }, 0.0f, 0.5f));
+    AddCube({ 0, 1, 0 }, { 0, 0, 0 }, { 1, 1, 1 }, Material::Standard({ 1,0,0 }, 0.0f, 0.5f));
+    AddCube({ 2, 1, 0 }, { 45, 45, 0 }, { 0.8f, 0.8f, 0.8f }, Material::Standard({ 1,0.5f,0 }, 0.0f, 0.5f));
+    AddCube({ 4, 1, 0 }, { 0, 0, 0 }, { 1, 1, 1 }, Material::Emissive({ 1,1,1 }, 5.0f));
+
+    AddCube({ -4, 3, 0 }, { 0, 0, 0 }, { 1, 1, 1 }, Material::Standard({ 0.8f,0.8f,0.8f }, 1.0f, 0.1f));
+    AddCube({ -2, 3, 0 }, { 0, 0, 0 }, { 1, 1, 1 }, Material::Standard({ 0.8f,0.8f,0.8f }, 0.5f, 0.5f));
+    AddCube({ 0, 3, 0 }, { 0, 0, 0 }, { 1, 1, 1 }, Material::Standard({ 0.8f,0.8f,0.8f }, 0.0f, 1.0f));
+    AddCube({ 2, 3, 0 }, { 0, 0, 0 }, { 1, 1, 1 }, Material::Glass({ 0.6f, 0.8f, 1.0f }));
+    AddCube({ 4, 3, 0 }, { 0, 0, 0 }, { 1, 1, 1 }, Material::Uranium({ 0.2f, 1.0f, 0.2f }));
+}
+
+void TestMaterials::AddCube(glm::vec3 pos, glm::vec3 rot, glm::vec3 scale, Material mat) {
+    objects.push_back({ pos, rot, scale, mat });
+}
+
+void TestMaterials::Draw(unsigned int shaderProgram) {
+    glUniform1i(glGetUniformLocation(shaderProgram, "useTexture"), 0);
+
+    for (const auto& obj : objects) {
+        glm::mat4 model = glm::mat4(1.0f);
+        model = glm::translate(model, obj.position);
+        model = glm::rotate(model, glm::radians(obj.rotation.x), glm::vec3(1, 0, 0));
+        model = glm::rotate(model, glm::radians(obj.rotation.y), glm::vec3(0, 1, 0));
+        model = glm::rotate(model, glm::radians(obj.rotation.z), glm::vec3(0, 0, 1));
+        model = glm::scale(model, obj.scale);
+
+        glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "model"), 1, GL_FALSE, &model[0][0]);
+
+        const Material& m = obj.material;
+        glUniform3fv(glGetUniformLocation(shaderProgram, "material.albedo"), 1, &m.albedo[0]);
+        glUniform1f(glGetUniformLocation(shaderProgram, "material.metallic"), m.metallic);
+        glUniform1f(glGetUniformLocation(shaderProgram, "material.roughness"), m.roughness);
+        glUniform3fv(glGetUniformLocation(shaderProgram, "material.emission"), 1, &m.emission[0]);
+        glUniform1f(glGetUniformLocation(shaderProgram, "material.alpha"), m.alpha);
+
+        if (m.alpha < 1.0f) glDepthMask(GL_FALSE);
+        cubeMesh.Draw();
+        if (m.alpha < 1.0f) glDepthMask(GL_TRUE);
+    }
+}
+
+void TestMaterials::DrawCubeMesh() {
+    cubeMesh.Draw();
+}
+
+void TestMaterials::Cleanup() {
+    objects.clear();
+}
+
+File: .\TestMaterials.h
+
+#pragma once
+#include "Materials.h"
+#include "AssetLoader.h"
+#include <vector>
+#include <glm/glm.hpp>
+
+struct TestObject {
+    glm::vec3 position;
+    glm::vec3 rotation;
+    glm::vec3 scale;
+    Material material;
+};
+
+class TestMaterials {
+public:
+    static void Initialize();
+    static void AddCube(glm::vec3 pos, glm::vec3 rot, glm::vec3 scale, Material mat);
+    static void Draw(unsigned int shaderProgram);
+    static void DrawCubeMesh();
+    static void Cleanup();
+private:
+    static std::vector<TestObject> objects;
+    static Mesh cubeMesh;
+};
+
+File: .\Utils.cpp
+
+#include "Utils.h"
+#include <fstream>
+#include <filesystem>
+#include <format>
+#include <windows.h>
+#include <iostream>
+
+static std::ofstream g_LogFile;
+
+void Log(const std::string& message) {
+    if (!g_LogFile.is_open()) {
+        std::string path = GetExeDirectory() + "/log.md";
+        g_LogFile.open(path, std::ios::app);
+    }
+    std::string formatted = std::format("{}  \n", message);
+    if (g_LogFile.is_open()) {
+        g_LogFile << formatted;
+        g_LogFile.flush();
+    }
+    std::cout << formatted;
+}
+
+std::wstring ToWString(const std::string& str) {
+    return std::wstring(str.begin(), str.end());
+}
+
+std::string GetExeDirectory() {
+    wchar_t buffer[MAX_PATH];
+    GetModuleFileNameW(NULL, buffer, MAX_PATH);
+    std::filesystem::path path(buffer);
+    return path.parent_path().string();
+}
+
+File: .\Utils.h
+
+#pragma once
+#include <string>
+#include <vector>
+
+void Log(const std::string& message);
+std::wstring ToWString(const std::string& str);
+std::string GetExeDirectory();
+
