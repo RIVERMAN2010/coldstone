@@ -18,7 +18,7 @@ template<typename T, typename... Args>
 T* GameObject::addComponent(Args&&... args) {
     static_assert(std::is_base_of<Component, T>::value,
         "T must derive from Component");
-
+    
     auto component = std::make_unique<T>(std::forward<Args>(args)...);
     component->owner = this;
 	component->start();

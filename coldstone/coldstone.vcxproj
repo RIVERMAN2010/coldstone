@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32">
@@ -125,32 +125,46 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="Camera.cpp" />
     <ClCompile Include="Camera2D.cpp" />
     <ClCompile Include="coldstone.cpp" />
     <ClCompile Include="GameObject.cpp" />
+    <ClCompile Include="GLResourcePool.cpp" />
+    <ClCompile Include="ModelLoader.cpp" />
+    <ClCompile Include="RenderGraph.cpp" />
+    <ClCompile Include="RGBuilder.cpp" />
     <ClCompile Include="Shader.cpp" />
-    <ClCompile Include="SpriteRenderBatch.cpp" />
-    <ClCompile Include="SpriteRenderer.cpp" />
-    <ClCompile Include="Texture.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Camera.h" />
+    <ClInclude Include="Component.h" />
+    <ClInclude Include="GameObject.h" />
+    <ClInclude Include="GLCommandBuffer.h" />
+    <ClInclude Include="GLPipeline.h" />
+    <ClInclude Include="GLResourcePool.h" />
+    <ClInclude Include="GLTexture.h" />
+    <ClInclude Include="GPUResource.h" />
+    <ClInclude Include="ICommandBuffer.h" />
+    <ClInclude Include="IResourcePool.h" />
+    <ClInclude Include="MeshData.h" />
+    <ClInclude Include="Model.h" />
+    <ClInclude Include="ModelLoader.h" />
+    <ClInclude Include="RenderGraph.h" />
+    <ClInclude Include="RenderPass.h" />
+    <ClInclude Include="RGResource.h" />
+    <ClInclude Include="RGBuilder.h" />
+    <ClInclude Include="RGRegistry.h" />
+    <ClInclude Include="Shader.h" />
+    <ClInclude Include="Transform.h" />
+    <ClInclude Include="Vertex.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="fractal_noise.glsl" />
     <None Include="sprite_frag.glsl" />
     <None Include="sprite_vertex.glsl" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Camera2D.h" />
-    <ClInclude Include="Component.h" />
-    <ClInclude Include="GameObject.h" />
-    <ClInclude Include="Shader.h" />
-    <ClInclude Include="Sprite.h" />
-    <ClInclude Include="SpriteRenderBatch.h" />
-    <ClInclude Include="SpriteRenderer.h" />
-    <ClInclude Include="Texture.h" />
-    <ClInclude Include="Transform.h" />
-  </ItemGroup>
-  <ItemGroup>
-    <Image Include="image.png" />
-    <Image Include="steve1.png" />
+    <Text Include="notes.txt" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

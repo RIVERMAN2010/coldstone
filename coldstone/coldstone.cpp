@@ -5,7 +5,8 @@
 #include <IL/ilu.h>
 #include <string>
 #include <iostream>
-#include "SpriteRenderer.h"
+#include "RenderGraph.h"
+#include "GLCommandBuffer.h"
 
 struct ImageData {
     int width;
@@ -13,8 +14,7 @@ struct ImageData {
     int channels;
     unsigned char* pixels;
 };
-ImageData LoadImage(const std::string& path)
-{
+ImageData LoadImage(const std::string& path) {
     ILuint image;
     ilGenImages(1, &image);
     ilBindImage(image);
@@ -43,8 +43,7 @@ ImageData LoadImage(const std::string& path)
     ilDeleteImages(1, &image);
     return data;
 }
-int main(void)
-{
+int main(void) {
     GLFWwindow* window;
 
     
@@ -52,8 +51,7 @@ int main(void)
         return -1;
 
     window = glfwCreateWindow(640, 480, "Hello World", NULL, NULL);
-    if (!window)
-    {
+    if (!window) {
         glfwTerminate();
         return -1;
     }
@@ -75,44 +73,38 @@ int main(void)
 		std::cerr << "Failed to initialize GLEW" << std::endl;
 		return -1;
 	}
-	Camera2D camera = Camera2D(0,640, 480, 0);
-	SpriteRenderer spriteRenderer = SpriteRenderer(camera);
 
-	ImageData imgData = LoadImage("steve1.png");
-	std::shared_ptr<Texture> texture = std::make_shared<Texture>(imgData.pixels, imgData.width, imgData.height, GL_RGBA);
-	Sprite sprite;
-	sprite.texture = texture;
-	Transform transform;
-    transform.position = glm::vec3(100, 100, 0);
-    transform.size = glm::vec2(200, 200);
+    struct GBufferData {
+        TextureHandle albedo;
+        TextureHandle normal;
+        TextureHandle depth;
+    };
+	RenderGraph renderGraph;
+	renderGraph.addPass<GBufferData>("GBuffer Pass",
+        [&](RGBuilder& builder, GBufferData& data) {
+            TextureDesc desc = { 640, 480, TextureFormat::RGBA8, false };
+            data.albedo = builder.create(desc, "Albedo Texture");
+            data.normal = builder.create(desc, "Normal Texture");
+            data.depth = builder.create(desc, "Depth Texture");
+		},
+        [&](GBufferData& data, RGRegistry& registry, ICommandBuffer* cmd) {
+            
+        }
+	);
+    
 
-	imgData = LoadImage("image.png");
-    texture = std::make_shared<Texture>(imgData.pixels, imgData.width, imgData.height, GL_RGBA);
-    Sprite sprite2;
-    sprite2.texture = texture;
-    Transform transform2;
-    transform2.position = glm::vec3(300, 100, 0);
-    transform2.size = glm::vec2(200, 200);
-
-	glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
-
-
-    while (!glfwWindowShouldClose(window))
-    {
+    while (!glfwWindowShouldClose(window)) {
         glClear(GL_COLOR_BUFFER_BIT);
 		
-        spriteRenderer.begin();
-        spriteRenderer.submit(sprite, transform);
-		spriteRenderer.submit(sprite2, transform2);
-        spriteRenderer.end();
-        spriteRenderer.flush();
+
+		
 
         glfwSwapBuffers(window);
         glfwPollEvents();
 
     }
-	//call this before exiting to clean up GPU resources
-	spriteRenderer.destroy();
+
+    
 
     glfwTerminate();
     return 0;

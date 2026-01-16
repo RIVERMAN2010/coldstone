@@ -9,8 +9,8 @@ public:
 	GameObject* owner = nullptr;
 	GameObject* getOwner() const { return owner; }
 
-	void update();
-	void start();
-	void destroy();
+	void update() {}
+	void start() {}
+	void destroy() {}
 };
 

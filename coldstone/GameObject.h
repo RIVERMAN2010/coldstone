@@ -10,7 +10,7 @@ public:
     T* getComponent();
 
 	// Adds a new component of type T to the GameObject and returns a pointer to it
-	//allows for construction with arguments, for example: addComponent<Transform>(x, y, z);
+	//allows for construction with arguments, for example: addComponent<Transform2D>(x, y, z);
     template<typename T, typename... Args>
     T* addComponent(Args&&... args);
 

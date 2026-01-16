@@ -37,6 +37,18 @@
     <Filter Include="Header Files\Components">
       <UniqueIdentifier>{47bd9b52-83a0-401f-a7e4-ca7534b11268}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Assets">
+      <UniqueIdentifier>{8e245d8b-515d-4558-93d2-9939c42bbb0e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Assets\Shaders">
+      <UniqueIdentifier>{7a531df8-2bb6-4c26-8aa7-0047fc2ad798}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\Map">
+      <UniqueIdentifier>{dcfb73c0-fe5a-4360-a022-5efa9f3da07d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\Map">
+      <UniqueIdentifier>{87f09ce7-f09a-4fa5-a7f5-67cd34aa500e}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="coldstone.cpp">
@@ -60,14 +72,12 @@
     <ClCompile Include="Camera2D.cpp">
       <Filter>Source Files\Core</Filter>
     </ClCompile>
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="sprite_vertex.glsl">
-      <Filter>Resource Files</Filter>
-    </None>
-    <None Include="sprite_frag.glsl">
-      <Filter>Resource Files</Filter>
-    </None>
+    <ClCompile Include="ModelRenderer.cpp">
+      <Filter>Source Files\Rendering</Filter>
+    </ClCompile>
+    <ClCompile Include="ModelLoader.cpp">
+      <Filter>Source Files\Utils</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="GameObject.h">
@@ -91,19 +101,31 @@
     <ClInclude Include="Texture.h">
       <Filter>Header Files\Rendering</Filter>
     </ClInclude>
-    <ClInclude Include="Transform.h">
+    <ClInclude Include="Transform2D.h">
       <Filter>Header Files\Components</Filter>
     </ClInclude>
     <ClInclude Include="Camera2D.h">
       <Filter>Header Files\Core</Filter>
     </ClInclude>
+    <ClInclude Include="ModelRenderer.h">
+      <Filter>Header Files\Rendering</Filter>
+    </ClInclude>
+    <ClInclude Include="ModelLoader.h">
+      <Filter>Header Files\Utils</Filter>
+    </ClInclude>
+    <ClInclude Include="Model.h">
+      <Filter>Header Files\Rendering</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <Image Include="steve1.png">
-      <Filter>Resource Files</Filter>
-    </Image>
-    <Image Include="image.png">
-      <Filter>Resource Files</Filter>
-    </Image>
+    <None Include="sprite_frag.glsl">
+      <Filter>Assets\Shaders</Filter>
+    </None>
+    <None Include="sprite_vertex.glsl">
+      <Filter>Assets\Shaders</Filter>
+    </None>
+    <None Include="fractal_noise.glsl">
+      <Filter>Assets\Shaders</Filter>
+    </None>
   </ItemGroup>
 </Project>

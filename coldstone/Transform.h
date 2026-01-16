@@ -5,5 +5,6 @@
 class Transform : public Component {
 public:
 	glm::vec3 position;
-	glm::vec2 size;
+	glm::vec3 rotation;
+	glm::vec3 scale;
 };

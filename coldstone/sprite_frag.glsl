@@ -1,4 +1,5 @@
 #version 330 core
+#include "fractal_noise.glsl"
 
 layout(location = 0) out vec4 FragColor;
 
@@ -11,6 +12,7 @@ void main()
 {
     int index = int(v_TexIndex);
     vec4 texColor = texture(u_Textures[index], v_TexCoord);
-       
-    FragColor = texColor;
+    
+    float noise = fbm(v_TexCoord);
+    FragColor = texColor * noise;
 }

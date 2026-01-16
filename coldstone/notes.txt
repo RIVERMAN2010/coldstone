@@ -1,0 +1,13 @@
+
+
+ResourcePool information:
+ have resources contain a first and last pass value,
+ first/last pass values are assigned during resource creation and either write/reads later on.
+ The resource is considered free once the resource's last pass value is less than or equal to the current pass value.
+ ResourcePool only tracks resources that are related to the render graph, so resources created outside of the render graph are not tracked here.
+
+Mesh Generation:
+ Meshes are created from MeshData by the MeshGenerator.
+ MeshData contains the raw vertex/index data and the MeshGenerator is responsible for creating GPU resources from that data.
+ Mesh itself is an API abstract class that is extended by API specific implementations (e.g. D3D12Mesh, VulkanMesh).
+ Meshes are created outside of the render graph and are managed directly by the scene or other systems.
