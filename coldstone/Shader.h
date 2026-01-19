@@ -1,29 +1,26 @@
 #pragma once
-#include <GL/glew.h>
 #include <string>
-#include <fstream>
-#include <sstream>
-#include <iostream>
 #include <glm/glm.hpp>
 
 class Shader {
 public:
-    // Constructor reads and builds the shader
-    Shader(const char* vertexPath, const char* fragmentPath);
+    Shader(const std::string& vertexSource, const std::string& fragmentSource, bool isSourceCode = false);
+    ~Shader();
 
-    // Use/activate the shader
     void use() const;
     void destroy() const;
+    unsigned int GetID() const { return ID; }
 
-    // Utility uniform functions
     void setBool(const std::string& name, bool value) const;
     void setInt(const std::string& name, int value) const;
     void setFloat(const std::string& name, float value) const;
+    void setVec3(const std::string& name, const glm::vec3& value) const;
     void setMat4(const std::string& name, const glm::mat4& mat) const;
-    std::string readShaderFile(const char* path);
-    GLuint getLocation(const std::string& name) const;
-    GLuint ID;
+
+    int getLocation(const std::string& name) const;
+
 private:
-    
-    void checkCompileErrors(GLuint shader, std::string type);
+    unsigned int ID;
+    std::string readShaderFile(const char* path);
+    void checkCompileErrors(unsigned int shader, std::string type);
 };

@@ -8,6 +8,7 @@
 #include "RGRegistry.h"
 #include "RenderPass.h"
 #include "GPUResource.h"
+#include "IResourcePool.h"
 
 class RenderGraph {
 	friend class RGBuilder;
@@ -16,17 +17,33 @@ private:
 	std::vector<RenderPass> passes;
 	std::vector<RGResource> resources;
 
-	std::vector<GPUResource*> physicalResources; // alligns with resources by index, i.e. physicalResources[i] is the actual GPU resource for resources[i]
-	//the ordering of physicalResources is determined during compile() and the resources are acquired from the resource pool then released during destruction of the RenderGraph
-	
+	std::vector<GPUResource*> physicalResources;
+	IResourcePool* resourcePool = nullptr;
+
 public:
+	RenderGraph(IResourcePool* pool);
+	~RenderGraph();
+
 	template<typename T>
 	void addPass(const std::string& name,
 		std::function<void(RGBuilder&, T&)> setupFunc,
-		std::function<void(T&, RGRegistry&, ICommandBuffer*)> executeFunc);
+		std::function<void(T&, RGRegistry&, ICommandBuffer*)> executeFunc) {
+
+		RenderPass pass;
+		pass.name = name;
+
+		T data;
+		RGBuilder builder(*this, pass);
+		setupFunc(builder, data);
+
+		pass.execute = [=](RGRegistry& registry, ICommandBuffer* cmdBuffer) {
+			T localData = data;
+			executeFunc(localData, registry, cmdBuffer);
+			};
+		passes.push_back(pass);
+	}
 
 	void compile();
 	void execute(ICommandBuffer* cmdBuffer);
-
+	void reset();
 };
-

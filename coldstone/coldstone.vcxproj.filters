@@ -25,96 +25,153 @@
     <Filter Include="Source Files\Core">
       <UniqueIdentifier>{a8431118-58b9-4638-b801-62770bb89b3a}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Header Files\Utils">
-      <UniqueIdentifier>{2cc88e00-ddc0-4117-b9ea-2c7a55266228}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Source Files\Utils">
-      <UniqueIdentifier>{72ca4c44-7ca6-4bac-bd96-c549aea69826}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Source Files\Components">
-      <UniqueIdentifier>{e9cf349b-77dd-417d-9e40-b680f3580ea0}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Header Files\Components">
-      <UniqueIdentifier>{47bd9b52-83a0-401f-a7e4-ca7534b11268}</UniqueIdentifier>
-    </Filter>
     <Filter Include="Assets">
       <UniqueIdentifier>{8e245d8b-515d-4558-93d2-9939c42bbb0e}</UniqueIdentifier>
     </Filter>
     <Filter Include="Assets\Shaders">
       <UniqueIdentifier>{7a531df8-2bb6-4c26-8aa7-0047fc2ad798}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Header Files\Map">
-      <UniqueIdentifier>{dcfb73c0-fe5a-4360-a022-5efa9f3da07d}</UniqueIdentifier>
+    <Filter Include="Header Files\Testing">
+      <UniqueIdentifier>{fde15f3c-6e4c-4a0b-9e3c-5d5627e9d50b}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Source Files\Map">
-      <UniqueIdentifier>{87f09ce7-f09a-4fa5-a7f5-67cd34aa500e}</UniqueIdentifier>
+    <Filter Include="Header Files\Assets">
+      <UniqueIdentifier>{2cc88e00-ddc0-4117-b9ea-2c7a55266228}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\Assets">
+      <UniqueIdentifier>{72ca4c44-7ca6-4bac-bd96-c549aea69826}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\Rendering\Api">
+      <UniqueIdentifier>{57bef42d-dc4c-49fa-a21e-b329999d3c35}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\Rendering\Graph">
+      <UniqueIdentifier>{7b44c15c-86f3-4715-bcd0-db3c4e902acc}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\Interfaces">
+      <UniqueIdentifier>{1049df2c-c93b-497a-8a9d-f9e7379dbb98}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\Rendering\Api">
+      <UniqueIdentifier>{741d014d-2682-4159-8626-65d5a8c6af67}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\Rendering\Graph">
+      <UniqueIdentifier>{c964976b-4372-4dd6-92ca-8b5e8c1506f9}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="ModelLoader.cpp">
+      <Filter>Source Files\Assets</Filter>
+    </ClCompile>
     <ClCompile Include="coldstone.cpp">
-      <Filter>Source Files</Filter>
+      <Filter>Source Files\Core</Filter>
+    </ClCompile>
+    <ClCompile Include="Input.cpp">
+      <Filter>Source Files\Core</Filter>
+    </ClCompile>
+    <ClCompile Include="Camera.cpp">
+      <Filter>Source Files\Core</Filter>
     </ClCompile>
     <ClCompile Include="GameObject.cpp">
       <Filter>Source Files\Core</Filter>
     </ClCompile>
-    <ClCompile Include="SpriteRenderBatch.cpp">
-      <Filter>Source Files\Rendering</Filter>
+    <ClCompile Include="GLCommandBuffer.cpp">
+      <Filter>Source Files\Rendering\Api</Filter>
     </ClCompile>
-    <ClCompile Include="SpriteRenderer.cpp">
-      <Filter>Source Files\Rendering</Filter>
+    <ClCompile Include="GLResourcePool.cpp">
+      <Filter>Source Files\Rendering\Api</Filter>
+    </ClCompile>
+    <ClCompile Include="GLFramebuffer.cpp">
+      <Filter>Source Files\Rendering\Api</Filter>
     </ClCompile>
     <ClCompile Include="Shader.cpp">
+      <Filter>Source Files\Rendering\Api</Filter>
+    </ClCompile>
+    <ClCompile Include="RenderGraph.cpp">
+      <Filter>Source Files\Rendering\Graph</Filter>
+    </ClCompile>
+    <ClCompile Include="RGBuilder.cpp">
+      <Filter>Source Files\Rendering\Graph</Filter>
+    </ClCompile>
+    <ClCompile Include="RGRegistry.cpp">
+      <Filter>Source Files\Rendering\Graph</Filter>
+    </ClCompile>
+    <ClCompile Include="TextRenderer.cpp">
       <Filter>Source Files\Rendering</Filter>
-    </ClCompile>
-    <ClCompile Include="Texture.cpp">
-      <Filter>Source Files\Rendering</Filter>
-    </ClCompile>
-    <ClCompile Include="Camera2D.cpp">
-      <Filter>Source Files\Core</Filter>
-    </ClCompile>
-    <ClCompile Include="ModelRenderer.cpp">
-      <Filter>Source Files\Rendering</Filter>
-    </ClCompile>
-    <ClCompile Include="ModelLoader.cpp">
-      <Filter>Source Files\Utils</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="GameObject.h">
       <Filter>Header Files\Core</Filter>
     </ClInclude>
-    <ClInclude Include="Component.h">
+    <ClInclude Include="TestScene.h">
+      <Filter>Header Files\Testing</Filter>
+    </ClInclude>
+    <ClInclude Include="Scene.h">
       <Filter>Header Files\Core</Filter>
     </ClInclude>
-    <ClInclude Include="SpriteRenderBatch.h">
-      <Filter>Header Files\Rendering</Filter>
-    </ClInclude>
-    <ClInclude Include="Sprite.h">
-      <Filter>Header Files\Components</Filter>
-    </ClInclude>
-    <ClInclude Include="SpriteRenderer.h">
-      <Filter>Header Files\Rendering</Filter>
-    </ClInclude>
-    <ClInclude Include="Shader.h">
-      <Filter>Header Files\Rendering</Filter>
-    </ClInclude>
-    <ClInclude Include="Texture.h">
-      <Filter>Header Files\Rendering</Filter>
-    </ClInclude>
-    <ClInclude Include="Transform2D.h">
-      <Filter>Header Files\Components</Filter>
-    </ClInclude>
-    <ClInclude Include="Camera2D.h">
+    <ClInclude Include="Input.h">
       <Filter>Header Files\Core</Filter>
     </ClInclude>
-    <ClInclude Include="ModelRenderer.h">
+    <ClInclude Include="Camera.h">
+      <Filter>Header Files\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Shaders.h">
+      <Filter>Header Files\Rendering</Filter>
+    </ClInclude>
+    <ClInclude Include="TextRenderer.h">
       <Filter>Header Files\Rendering</Filter>
     </ClInclude>
     <ClInclude Include="ModelLoader.h">
-      <Filter>Header Files\Utils</Filter>
+      <Filter>Header Files\Assets</Filter>
     </ClInclude>
-    <ClInclude Include="Model.h">
-      <Filter>Header Files\Rendering</Filter>
+    <ClInclude Include="Mesh.h">
+      <Filter>Header Files\Assets</Filter>
+    </ClInclude>
+    <ClInclude Include="GLCommandBuffer.h">
+      <Filter>Header Files\Rendering\Api</Filter>
+    </ClInclude>
+    <ClInclude Include="GLFrameBuffer.h">
+      <Filter>Header Files\Rendering\Api</Filter>
+    </ClInclude>
+    <ClInclude Include="GLResourcePool.h">
+      <Filter>Header Files\Rendering\Api</Filter>
+    </ClInclude>
+    <ClInclude Include="GLTexture.h">
+      <Filter>Header Files\Rendering\Api</Filter>
+    </ClInclude>
+    <ClInclude Include="GLPipeline.h">
+      <Filter>Header Files\Rendering\Api</Filter>
+    </ClInclude>
+    <ClInclude Include="Shader.h">
+      <Filter>Header Files\Rendering\Api</Filter>
+    </ClInclude>
+    <ClInclude Include="RenderGraph.h">
+      <Filter>Header Files\Rendering\Graph</Filter>
+    </ClInclude>
+    <ClInclude Include="RenderPass.h">
+      <Filter>Header Files\Rendering\Graph</Filter>
+    </ClInclude>
+    <ClInclude Include="RGBuilder.h">
+      <Filter>Header Files\Rendering\Graph</Filter>
+    </ClInclude>
+    <ClInclude Include="RGRegistry.h">
+      <Filter>Header Files\Rendering\Graph</Filter>
+    </ClInclude>
+    <ClInclude Include="GLResource.h">
+      <Filter>Header Files\Rendering\Graph</Filter>
+    </ClInclude>
+    <ClInclude Include="ICommandBuffer.h">
+      <Filter>Header Files\Interfaces</Filter>
+    </ClInclude>
+    <ClInclude Include="IResourcePool.h">
+      <Filter>Header Files\Interfaces</Filter>
+    </ClInclude>
+    <ClInclude Include="GPUResource.h">
+      <Filter>Header Files\Interfaces</Filter>
+    </ClInclude>
+    <ClInclude Include="RGResource.h">
+      <Filter>Header Files\Rendering\Graph</Filter>
+    </ClInclude>
+    <ClInclude Include="Component.h">
+      <Filter>Header Files\Core</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

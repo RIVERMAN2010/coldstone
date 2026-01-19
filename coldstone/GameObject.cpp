@@ -35,3 +35,4 @@ void GameObject::removeComponent(Component* component) {
             return c.get() == component;
         }), components.end());
 }
+

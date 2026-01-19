@@ -1,4 +1,5 @@
 #include "RGBuilder.h"
+#include "RenderGraph.h" 
 
 RGBuilder::RGBuilder(RenderGraph& _graph, RenderPass& _pass)
 	: graph(_graph), pass(_pass) {

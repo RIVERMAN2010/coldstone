@@ -1,55 +1,36 @@
 #pragma once
-
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
-class Camera3D
-{
+class Camera {
 public:
-    Camera3D(
-        glm::vec3 position,
-        float fovDegrees,
-        float aspectRatio,
-        float nearPlane,
-        float farPlane
-    );
+    Camera(glm::vec3 startPos);
 
-    // --- Movement ---
-    void moveForward(float amount);
-    void moveRight(float amount);
-    void moveUp(float amount);
+    void Update(float deltaTime, int screenW, int screenH);
+    glm::mat4 GetViewMatrix();
+    glm::mat4 GetProjectionMatrix(int screenW, int screenH);
+    glm::vec3 GetPosition() const { return Position; }
 
-    // --- Rotation ---
-    void rotate(float yawOffset, float pitchOffset);
-
-    // --- Setters ---
-    void setPosition(const glm::vec3& pos);
-    void setAspectRatio(float aspect);
-
-    // --- Getters ---
-    glm::vec3 getPosition() const;
-    glm::vec3 getForward() const;
-    glm::vec3 getRight() const;
-    glm::vec3 getUp() const;
-
-    glm::mat4 getViewMatrix() const;
-    glm::mat4 getProjectionMatrix() const;
+    void ToggleFlightMode();
+    bool IsInFlightMode() const { return flyMode; }
 
 private:
-    void updateVectors();
+    void UpdateOrbit(float deltaTime, int screenW, int screenH);
+    void UpdateFly(float deltaTime);
+    void UpdateVectors();
 
-private:
-    glm::vec3 position;
+    glm::vec3 Position;
+    glm::vec3 Pivot;
+    glm::vec3 Front, Up, Right, WorldUp;
 
-    float yaw;     // degrees
-    float pitch;   // degrees
+    float Yaw, Pitch;
+    float Distance;
 
-    float fov;
-    float aspect;
-    float nearPlane;
-    float farPlane;
+    float MovementSpeed;
+    float MouseSensitivity;
+    float Fov;
+    bool flyMode;
 
-    glm::vec3 forward;
-    glm::vec3 right;
-    glm::vec3 up;
-    glm::vec3 worldUp = { 0.0f, 1.0f, 0.0f };
+    float lastMouseX, lastMouseY;
+    bool firstMouse;
 };

@@ -7,8 +7,11 @@ using ResourceIdentifier = uint32_t;
 enum class TextureFormat {
 	RGBA8,
 	RGB8,
+	RGBA16F,
+	RGBA32F,
 	DEPTH24STENCIL8
 };
+
 struct TextureDesc {
 	uint32_t width;
 	uint32_t height;

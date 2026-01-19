@@ -2,13 +2,15 @@
 
 #include "RGResource.h"
 #include "GPUResource.h"
-#include "RenderGraph.h"
+
+class RenderGraph;
+struct RenderPass;
 
 class RGRegistry {
 public:
-	RGRegistry(RenderGraph&, RenderPass&);
+	RGRegistry(RenderGraph& graph, RenderPass& pass);
 	~RGRegistry();
-	GPUTexture* getTexture(TextureHandle handle); //uses the handle to acquire the descriptor which is then used to get the actual texture from the resource pool
+	GPUTexture* getTexture(TextureHandle handle);
 private:
 	RenderGraph& graph;
 	RenderPass& pass;

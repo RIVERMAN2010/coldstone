@@ -1,8 +1,10 @@
 #pragma once
 
 #include "RGResource.h"
-#include "RenderGraph.h"
 #include "RenderPass.h"
+#include <string>
+
+class RenderGraph;
 
 class RGBuilder {
 public:

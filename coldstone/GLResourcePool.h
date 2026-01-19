@@ -3,7 +3,7 @@
 #include "IResourcePool.h"
 #include "GLTexture.h"
 #include <vector>
-#include <unordered_map>
+#include <list>
 
 class GLResourcePool : public IResourcePool {
 public:
@@ -11,6 +11,8 @@ public:
 	~GLResourcePool() override;
 	GPUTexture* allocateTexture(const TextureDesc& desc) override;
 	void releaseTexture(GPUTexture* texture) override;
+	void destroy();
+
 private:
-	
+	std::vector<GLTexture*> pool;
 };
