@@ -9,15 +9,23 @@ struct Material {
     float metallic;
     float roughness;
     glm::vec3 emission;
+    float transparency;
 
-    static Material Chrome() { return { {0.9f, 0.9f, 0.9f}, 1.0f, 0.05f, {0,0,0} }; }
-    static Material Gold() { return { {1.0f, 0.76f, 0.33f}, 1.0f, 0.1f, {0,0,0} }; }
-    static Material PlasticRed() { return { {1.0f, 0.1f, 0.1f}, 0.0f, 0.5f, {0,0,0} }; }
-    static Material RubberBlue() { return { {0.1f, 0.1f, 1.0f}, 0.0f, 0.9f, {0,0,0} }; }
-    static Material EmissiveGreen() { return { {0,0,0}, 0.0f, 1.0f, {0.2f, 1.0f, 0.2f} }; } // Glows
-    static Material EmissiveStrong() { return { {0,0,0}, 0.0f, 1.0f, {5.0f, 5.0f, 5.0f} }; } // White Light
-    static Material GlassFake() { return { {0.9f, 0.9f, 1.0f}, 0.0f, 0.01f, {0,0,0} }; } // glass surface
-    static Material RoughMetal() { return { {0.6f, 0.6f, 0.6f}, 1.0f, 0.8f, {0,0,0} }; }
+    // Presets
+    static Material Gold() { return { {1.0f, 0.76f, 0.33f}, 1.0f, 0.05f, {0,0,0}, 0.0f }; }
+    static Material Silver() { return { {0.95f, 0.95f, 0.95f}, 1.0f, 0.1f, {0,0,0}, 0.0f }; }
+    static Material RoughIron() { return { {0.5f, 0.5f, 0.5f}, 0.8f, 0.7f, {0,0,0}, 0.0f }; }
+
+    static Material PlasticRed() { return { {1.0f, 0.1f, 0.1f}, 0.0f, 0.5f, {0,0,0}, 0.0f }; }
+    static Material RubberBlue() { return { {0.1f, 0.1f, 1.0f}, 0.0f, 0.95f, {0,0,0}, 0.0f }; }
+
+    // Emissive
+    static Material EmissiveGreen() { return { {0,0,0}, 0.0f, 1.0f, {0.0f, 5.0f, 0.0f}, 0.0f }; } // Strong Green Light
+    static Material EmissiveWhite() { return { {0,0,0}, 0.0f, 1.0f, {10.0f, 10.0f, 10.0f}, 0.0f }; } // Blinding White
+
+    // Transparent
+    static Material GlassClear() { return { {0.9f, 0.95f, 1.0f}, 0.0f, 0.0f, {0,0,0}, 0.8f }; }
+    static Material GlassFrosted() { return { {1.0f, 0.8f, 0.8f}, 0.0f, 0.4f, {0,0,0}, 0.6f }; }
 };
 
 struct GameObject {
@@ -42,33 +50,21 @@ public:
 
         objects.clear();
 
-        // 1. Huge Floor to catch shadows
-        objects.push_back({ {0, -1.0f, 0}, {0,0,0}, {50.0f, 0.2f, 50.0f}, Material::PlasticRed(), &floorMesh });
-        // Override floor material to grey concrete
-        objects.back().material = { {0.5f, 0.5f, 0.5f}, 0.0f, 0.9f, {0,0,0} };
+        // 1. Floor (Dark Concrete)
+        objects.push_back({ {0, -1.0f, 0}, {0,0,0}, {50.0f, 0.2f, 50.0f}, { {0.2f, 0.2f, 0.2f}, 0.0f, 0.8f, {0,0,0}, 0.0f }, &floorMesh });
 
-        // 2. Test Cubes Row 1
-        // Gold
-        objects.push_back({ {-4, 1, 0}, {0, 30, 0}, {1.5f, 1.5f, 1.5f}, Material::Gold(), &cubeMesh });
+        // 2. Metals (Left)
+        objects.push_back({ {-6, 1, 0}, {0, 30, 0}, {1.5f, 1.5f, 1.5f}, Material::Gold(), &cubeMesh });
+        objects.push_back({ {-3, 1, 0}, {0, 0, 0}, {1.5f, 1.5f, 1.5f}, Material::Silver(), &cubeMesh });
+        objects.push_back({ { 0, 1, 0}, {0, 0, 0}, {1.5f, 1.5f, 1.5f}, Material::RoughIron(), &cubeMesh });
 
-        // Chrome / Mirror
-        objects.push_back({ {-1, 1, 0}, {0, 0, 0}, {1.5f, 1.5f, 1.5f}, Material::Chrome(), &cubeMesh });
+        // 3. Emissive (Right)
+        objects.push_back({ { 3, 1, 2}, {0,0,0}, {1,1,1}, Material::EmissiveGreen(), &cubeMesh });
+        objects.push_back({ { 6, 1, -2}, {0,0,0}, {1,1,1}, Material::EmissiveWhite(), &cubeMesh });
 
-        // Fake Glass (High Gloss)
-        objects.push_back({ { 2, 1, 0}, {45, 45, 0}, {1.5f, 1.5f, 1.5f}, Material::GlassFake(), &cubeMesh });
-
-        // Rough Metal
-        objects.push_back({ { 5, 1, 0}, {0, 0, 0}, {1.5f, 1.5f, 1.5f}, Material::RoughMetal(), &cubeMesh });
-
-        // 3. Test Cubes Row 2 (Special)
-        // Emissive Green (Radioactive)
-        objects.push_back({ {-4, 4, -2}, {0,0,0}, {1,1,1}, Material::EmissiveGreen(), &cubeMesh });
-
-        // Super Bright Light Source (Visual only, point light logic is in shader)
-        objects.push_back({ { 0, 5, 2}, {0,0,0}, {0.5f, 0.5f, 0.5f}, Material::EmissiveStrong(), &cubeMesh });
-
-        // Blue Rubber
-        objects.push_back({ { 4, 4, -2}, {10, 20, 30}, {1,1,1}, Material::RubberBlue(), &cubeMesh });
+        // 4. Glass (Front)
+        objects.push_back({ {-2, 1, 4}, {45, 45, 0}, {1.5f, 1.5f, 1.5f}, Material::GlassClear(), &cubeMesh });
+        objects.push_back({ { 2, 1, 4}, {0, 20, 0}, {1.5f, 1.5f, 1.5f}, Material::GlassFrosted(), &cubeMesh });
     }
 };
 std::vector<GameObject> Scene::objects;

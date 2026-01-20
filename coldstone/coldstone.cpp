@@ -20,6 +20,12 @@
 #include "Shaders.h"
 #include "TextRenderer.h"
 
+struct PointLight {
+    glm::vec3 position;
+    glm::vec3 color;
+    float radius;
+};
+
 int main(void) {
     if (!glfwInit()) return -1;
 
@@ -33,7 +39,7 @@ int main(void) {
     if (glewInit() != GLEW_OK) return -1;
 
     Scene::Initialize();
-    Camera camera(glm::vec3(0.0f, 8.0f, 15.0f));
+    Camera camera(glm::vec3(0.0f, 6.0f, 12.0f));
     GLResourcePool resourcePool;
     GLCommandBuffer cmdBuffer;
     DigitRenderer digitRenderer;
@@ -43,6 +49,8 @@ int main(void) {
     Shader gBufferShader(GBUFFER_VS, GBUFFER_FS, true);
     Shader lightingShader(LIGHTING_VS, LIGHTING_FS, true);
     Shader forwardShader(FORWARD_VS, FORWARD_FS, true);
+    Shader blurShader(BLUR_VS, BLUR_FS, true);
+    Shader compositeShader(COMPOSITE_VS, COMPOSITE_FS, true);
 
     GLPipeline shadowPipeline;
     shadowPipeline.shader = &shadowShader;
@@ -67,14 +75,36 @@ int main(void) {
     forwardPipeline.blend = true;
     forwardPipeline.blendSrc = GL_SRC_ALPHA;
     forwardPipeline.blendDst = GL_ONE_MINUS_SRC_ALPHA;
+    forwardPipeline.cullFace = true;
+
+    GLPipeline blurPipeline;
+    blurPipeline.shader = &blurShader;
+    blurPipeline.depthTest = false;
+    blurPipeline.blend = false;
+
+    GLPipeline compositePipeline;
+    compositePipeline.shader = &compositeShader;
+    compositePipeline.depthTest = false;
+    compositePipeline.blend = false;
 
     GLFramebuffer gBufferFBO(1280, 720);
+    GLFramebuffer lightingFBO(1280, 720);
+    GLFramebuffer pingPongFBO[2] = { GLFramebuffer(1280, 720), GLFramebuffer(1280, 720) };
+
     const int SHADOW_WIDTH = 2048, SHADOW_HEIGHT = 2048;
     GLFramebuffer shadowFBO(SHADOW_WIDTH, SHADOW_HEIGHT);
 
     struct ShadowData { TextureHandle depthMap; };
     struct GBufferData { TextureHandle albedo, normal, material, depth; };
-    struct LightingData { TextureHandle output; };
+    struct LightingData { TextureHandle sceneColor, brightColor, depthBuffer; };
+    struct ForwardData { TextureHandle sceneColorInOut; TextureHandle depthInput; };
+    struct BlurData { TextureHandle inputBright; TextureHandle blur1, blur2; TextureHandle finalBloom; };
+    struct CompositeData { TextureHandle inputScene; TextureHandle inputBloom; };
+
+    TextureHandle hShadowDepth;
+    TextureHandle hAlbedo, hNormal, hMaterial, hDepth;
+    TextureHandle hSceneColor, hBrightColor;
+    TextureHandle hFinalBloom;
 
     double lastTime = glfwGetTime();
     int nbFrames = 0;
@@ -95,7 +125,19 @@ int main(void) {
         int width, height;
         glfwGetFramebufferSize(window, &width, &height);
         camera.Update(0.016f, width, height);
+
         gBufferFBO.Resize(width, height);
+        lightingFBO.Resize(width, height);
+        pingPongFBO[0].Resize(width, height);
+        pingPongFBO[1].Resize(width, height);
+
+        std::vector<PointLight> sceneLights;
+        for (const auto& obj : Scene::objects) {
+            float emissionMax = std::max(obj.material.emission.r, std::max(obj.material.emission.g, obj.material.emission.b));
+            if (emissionMax > 0.1f) {
+                sceneLights.push_back({ obj.position, obj.material.emission, 10.0f });
+            }
+        }
 
         glm::vec3 sunPos = glm::vec3(-10.0f, 20.0f, -10.0f);
         glm::vec3 sunDir = glm::normalize(sunPos - glm::vec3(0, 0, 0));
@@ -109,6 +151,7 @@ int main(void) {
             [&](RGBuilder& builder, ShadowData& data) {
                 TextureDesc desc = { (uint32_t)SHADOW_WIDTH, (uint32_t)SHADOW_HEIGHT, TextureFormat::DEPTH24STENCIL8, false };
                 data.depthMap = builder.create(desc, "ShadowMap");
+                hShadowDepth = data.depthMap;
             },
             [&](ShadowData& data, RGRegistry& registry, ICommandBuffer* cmd) {
                 GLCommandBuffer* glCmd = static_cast<GLCommandBuffer*>(cmd);
@@ -121,8 +164,7 @@ int main(void) {
                 glCmd->setUniformMat4(shadowPipeline.shader, "lightSpaceMatrix", lightSpaceMatrix);
 
                 for (auto& obj : Scene::objects) {
-                    if (obj.material.roughness < 0.02f && obj.material.metallic == 0.0f) continue;
-
+                    if (obj.material.transparency > 0.0f) continue;
                     glm::mat4 model = glm::mat4(1.0f);
                     model = glm::translate(model, obj.position);
                     model = glm::rotate(model, glm::radians(obj.rotation.y), glm::vec3(0, 1, 0));
@@ -142,6 +184,11 @@ int main(void) {
                 data.material = builder.create(desc, "Material");
                 TextureDesc dDesc = { (uint32_t)width, (uint32_t)height, TextureFormat::DEPTH24STENCIL8, false };
                 data.depth = builder.create(dDesc, "Depth");
+
+                hAlbedo = data.albedo;
+                hNormal = data.normal;
+                hMaterial = data.material;
+                hDepth = data.depth;
             },
             [&](GBufferData& data, RGRegistry& registry, ICommandBuffer* cmd) {
                 GLCommandBuffer* glCmd = static_cast<GLCommandBuffer*>(cmd);
@@ -159,7 +206,7 @@ int main(void) {
                 glCmd->setUniformMat4(gBufferPipeline.shader, "projection", camera.GetProjectionMatrix(width, height));
 
                 for (auto& obj : Scene::objects) {
-                    if (obj.material.roughness < 0.02f && obj.material.metallic == 0.0f) continue;
+                    if (obj.material.transparency > 0.0f) continue;
 
                     glm::mat4 model = glm::mat4(1.0f);
                     model = glm::translate(model, obj.position);
@@ -178,31 +225,51 @@ int main(void) {
 
         renderGraph.addPass<LightingData>("Lighting",
             [&](RGBuilder& builder, LightingData& data) {
-                builder.read(TextureHandle{ 0 });
-                builder.read(TextureHandle{ 1 });
-                builder.read(TextureHandle{ 2 });
-                builder.read(TextureHandle{ 3 });
-                builder.read(TextureHandle{ 4 });
+                builder.read(hShadowDepth);
+                builder.read(hAlbedo);
+                builder.read(hNormal);
+                builder.read(hMaterial);
+                builder.read(hDepth);
+
+                TextureDesc desc = { (uint32_t)width, (uint32_t)height, TextureFormat::RGBA16F, false };
+                data.sceneColor = builder.create(desc, "SceneColor");
+                data.brightColor = builder.create(desc, "BrightColor");
+
+                // Create a depth buffer for the lighting FBO so we can blit to it later
+                TextureDesc dDesc = { (uint32_t)width, (uint32_t)height, TextureFormat::DEPTH24STENCIL8, false };
+                data.depthBuffer = builder.create(dDesc, "LightingDepth");
+
+                hSceneColor = data.sceneColor;
+                hBrightColor = data.brightColor;
             },
             [&](LightingData& data, RGRegistry& registry, ICommandBuffer* cmd) {
                 GLCommandBuffer* glCmd = static_cast<GLCommandBuffer*>(cmd);
                 glCmd->setRegistry(&registry);
 
-                gBufferFBO.Unbind();
+                lightingFBO.AttachTexture((GLTexture*)registry.getTexture(data.sceneColor), GL_COLOR_ATTACHMENT0);
+                lightingFBO.AttachTexture((GLTexture*)registry.getTexture(data.brightColor), GL_COLOR_ATTACHMENT1);
+                // Attach the depth buffer to allow blitting later
+                lightingFBO.AttachTexture((GLTexture*)registry.getTexture(data.depthBuffer), GL_DEPTH_STENCIL_ATTACHMENT);
+                lightingFBO.Finalize();
+
                 glCmd->setViewport(width, height);
                 glCmd->clear(0.0f, 0.0f, 0.0f, 1.0f);
 
                 lightingPipeline.Bind();
 
-                glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, ((GLTexture*)registry.getTexture(TextureHandle{ 0 }))->getGLHandle());
+                glCmd->bindTexture(0, hShadowDepth);
                 glCmd->setUniformInt(lightingPipeline.shader, "shadowMap", 0);
-                glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D, ((GLTexture*)registry.getTexture(TextureHandle{ 1 }))->getGLHandle());
+
+                glCmd->bindTexture(1, hAlbedo);
                 glCmd->setUniformInt(lightingPipeline.shader, "gAlbedo", 1);
-                glActiveTexture(GL_TEXTURE2); glBindTexture(GL_TEXTURE_2D, ((GLTexture*)registry.getTexture(TextureHandle{ 2 }))->getGLHandle());
+
+                glCmd->bindTexture(2, hNormal);
                 glCmd->setUniformInt(lightingPipeline.shader, "gNormal", 2);
-                glActiveTexture(GL_TEXTURE3); glBindTexture(GL_TEXTURE_2D, ((GLTexture*)registry.getTexture(TextureHandle{ 3 }))->getGLHandle());
+
+                glCmd->bindTexture(3, hMaterial);
                 glCmd->setUniformInt(lightingPipeline.shader, "gMaterial", 3);
-                glActiveTexture(GL_TEXTURE4); glBindTexture(GL_TEXTURE_2D, ((GLTexture*)registry.getTexture(TextureHandle{ 4 }))->getGLHandle());
+
+                glCmd->bindTexture(4, hDepth);
                 glCmd->setUniformInt(lightingPipeline.shader, "gDepth", 4);
 
                 glCmd->setUniformVec3(lightingPipeline.shader, "viewPos", camera.GetPosition());
@@ -211,20 +278,32 @@ int main(void) {
                 glCmd->setUniformVec3(lightingPipeline.shader, "sunDir", sunDir);
                 glCmd->setUniformMat4(lightingPipeline.shader, "lightSpaceMatrix", lightSpaceMatrix);
 
+                glCmd->setUniformInt(lightingPipeline.shader, "numPointLights", (int)sceneLights.size());
+                for (int i = 0; i < sceneLights.size() && i < 16; ++i) {
+                    std::string base = "pointLights[" + std::to_string(i) + "]";
+                    glCmd->setUniformVec3(lightingPipeline.shader, base + ".position", sceneLights[i].position);
+                    glCmd->setUniformVec3(lightingPipeline.shader, base + ".color", sceneLights[i].color);
+                }
+
                 glCmd->bindVertexArray(Scene::quadMesh.VAO);
                 glCmd->drawIndexed(6);
             }
         );
 
-        renderGraph.addPass<LightingData>("Forward",
-            [&](RGBuilder& builder, LightingData& data) {},
-            [&](LightingData& data, RGRegistry& registry, ICommandBuffer* cmd) {
+        renderGraph.addPass<ForwardData>("Forward",
+            [&](RGBuilder& builder, ForwardData& data) {
+                data.depthInput = builder.read(hDepth);
+                data.sceneColorInOut = builder.read(hSceneColor);
+            },
+            [&](ForwardData& data, RGRegistry& registry, ICommandBuffer* cmd) {
                 GLCommandBuffer* glCmd = static_cast<GLCommandBuffer*>(cmd);
 
+                lightingFBO.Bind();
+                // Copy Depth from GBuffer to Lighting FBO so transparent objects depth test correctly
                 glBindFramebuffer(GL_READ_FRAMEBUFFER, gBufferFBO.GetID());
-                glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+                glBindFramebuffer(GL_DRAW_FRAMEBUFFER, lightingFBO.GetID());
                 glBlitFramebuffer(0, 0, width, height, 0, 0, width, height, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
-                glBindFramebuffer(GL_FRAMEBUFFER, 0);
+                lightingFBO.Bind();
 
                 forwardPipeline.Bind();
                 glCmd->setUniformMat4(forwardPipeline.shader, "view", camera.GetViewMatrix());
@@ -233,25 +312,94 @@ int main(void) {
                 glCmd->setUniformVec3(forwardPipeline.shader, "sunDir", sunDir);
 
                 for (auto& obj : Scene::objects) {
-                    if (obj.material.roughness < 0.02f && obj.material.metallic == 0.0f) {
+                    if (obj.material.transparency > 0.0f) {
                         glm::mat4 model = glm::mat4(1.0f);
                         model = glm::translate(model, obj.position);
                         model = glm::rotate(model, glm::radians(obj.rotation.y), glm::vec3(0, 1, 0));
                         model = glm::scale(model, obj.scale);
                         glCmd->setUniformMat4(forwardPipeline.shader, "model", model);
                         glCmd->setUniformVec3(forwardPipeline.shader, "color", obj.material.albedo);
-                        glCmd->setUniformFloat(forwardPipeline.shader, "alpha", 0.4f);
+                        glCmd->setUniformFloat(forwardPipeline.shader, "alpha", 1.0f - obj.material.transparency);
+                        glCmd->setUniformFloat(forwardPipeline.shader, "roughness", obj.material.roughness);
+
                         glCmd->bindVertexArray(obj.mesh->VAO);
+
+                        glCullFace(GL_FRONT);
+                        glCmd->drawIndexed((unsigned int)obj.mesh->indices.size());
+                        glCullFace(GL_BACK);
                         glCmd->drawIndexed((unsigned int)obj.mesh->indices.size());
                     }
                 }
             }
         );
 
-        renderGraph.addPass<LightingData>("UI",
-            [&](RGBuilder& builder, LightingData& data) {},
-            [&](LightingData& data, RGRegistry& registry, ICommandBuffer* cmd) {
+        renderGraph.addPass<BlurData>("Blur",
+            [&](RGBuilder& builder, BlurData& data) {
+                data.inputBright = builder.read(hBrightColor);
+
+                TextureDesc desc = { (uint32_t)width, (uint32_t)height, TextureFormat::RGBA16F, false };
+                data.blur1 = builder.create(desc, "Blur1");
+                data.blur2 = builder.create(desc, "Blur2");
+            },
+            [&](BlurData& data, RGRegistry& registry, ICommandBuffer* cmd) {
                 GLCommandBuffer* glCmd = static_cast<GLCommandBuffer*>(cmd);
+                glCmd->setRegistry(&registry);
+
+                pingPongFBO[0].AttachTexture((GLTexture*)registry.getTexture(data.blur1), GL_COLOR_ATTACHMENT0);
+                pingPongFBO[0].Finalize();
+                pingPongFBO[1].AttachTexture((GLTexture*)registry.getTexture(data.blur2), GL_COLOR_ATTACHMENT0);
+                pingPongFBO[1].Finalize();
+
+                bool horizontal = true, first_iteration = true;
+                int amount = 6;
+                blurPipeline.Bind();
+
+                for (unsigned int i = 0; i < amount; i++) {
+                    pingPongFBO[horizontal].Bind();
+                    glCmd->setUniformInt(blurPipeline.shader, "horizontal", horizontal);
+
+                    glActiveTexture(GL_TEXTURE0);
+                    if (first_iteration) {
+                        glCmd->bindTexture(0, data.inputBright);
+                    }
+                    else {
+                        glCmd->bindTexture(0, horizontal ? data.blur2 : data.blur1);
+                    }
+
+                    glCmd->bindVertexArray(Scene::quadMesh.VAO);
+                    glCmd->drawIndexed(6);
+
+                    horizontal = !horizontal;
+                    if (first_iteration) first_iteration = false;
+                }
+                hFinalBloom = data.blur1;
+            }
+        );
+
+        renderGraph.addPass<CompositeData>("Composite",
+            [&](RGBuilder& builder, CompositeData& data) {
+                data.inputScene = builder.read(hSceneColor);
+                data.inputBloom = builder.read(hFinalBloom);
+            },
+            [&](CompositeData& data, RGRegistry& registry, ICommandBuffer* cmd) {
+                GLCommandBuffer* glCmd = static_cast<GLCommandBuffer*>(cmd);
+                glCmd->setRegistry(&registry);
+
+                glBindFramebuffer(GL_FRAMEBUFFER, 0);
+                glCmd->setViewport(width, height);
+                glCmd->clear(0.0f, 0.0f, 0.0f, 1.0f);
+
+                compositePipeline.Bind();
+
+                glCmd->bindTexture(0, data.inputScene);
+                glCmd->setUniformInt(compositePipeline.shader, "scene", 0);
+
+                glCmd->bindTexture(1, data.inputBloom);
+                glCmd->setUniformInt(compositePipeline.shader, "bloomBlur", 1);
+
+                glCmd->bindVertexArray(Scene::quadMesh.VAO);
+                glCmd->drawIndexed(6);
+
                 glDisable(GL_DEPTH_TEST);
                 glEnable(GL_BLEND);
                 glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
