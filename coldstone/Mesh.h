@@ -2,11 +2,24 @@
 #include <glm/glm.hpp>
 #include <vector>
 #include <GL/glew.h>
+#include <map>
+#include <memory>
+#include <string>
+#include <assimp/Importer.hpp>
+#include <assimp/scene.h>
+
+struct BoneInfo {
+    int id;
+    glm::mat4 offset;
+};
 
 struct Vertex {
     glm::vec3 Position;
     glm::vec3 Normal;
     glm::vec2 TexCoords;
+    glm::vec4 Color;
+    int BoneIDs[4];
+    float Weights[4];
 };
 
 struct Mesh {
@@ -14,6 +27,12 @@ struct Mesh {
     std::vector<unsigned int> indices;
     unsigned int VAO = 0, VBO = 0, EBO = 0;
     unsigned int textureID = 0;
+
+    std::shared_ptr<Assimp::Importer> importer;
+    const aiScene* scene = nullptr;
+    std::map<std::string, BoneInfo> boneInfoMap;
+    int boneCounter = 0;
+    glm::mat4 globalInverseTransform = glm::mat4(1.0f);
 
     void Setup() {
         if (VAO == 0) glGenVertexArrays(1, &VAO);
@@ -33,6 +52,13 @@ struct Mesh {
         glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, Normal));
         glEnableVertexAttribArray(2);
         glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, TexCoords));
+
+        glEnableVertexAttribArray(3);
+        glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, Color));
+        glEnableVertexAttribArray(4);
+        glVertexAttribIPointer(4, 4, GL_INT, sizeof(Vertex), (void*)offsetof(Vertex, BoneIDs));
+        glEnableVertexAttribArray(5);
+        glVertexAttribPointer(5, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, Weights));
 
         glBindVertexArray(0);
     }

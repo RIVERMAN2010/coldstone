@@ -8,6 +8,8 @@
 #include <vector>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <windows.h>
+#include <filesystem>
 
 #include "RenderGraph.h"
 #include "GLCommandBuffer.h"
@@ -20,6 +22,10 @@
 #include "Shaders.h"
 #include "TextRenderer.h"
 
+#undef max
+#undef min
+std::string g_ExeDirectory;
+
 struct PointLight {
     glm::vec3 position;
     glm::vec3 color;
@@ -27,6 +33,9 @@ struct PointLight {
 };
 
 int main(void) {
+    char path[MAX_PATH];
+    GetModuleFileNameA(NULL, path, MAX_PATH);
+    g_ExeDirectory = std::filesystem::path(path).parent_path().string();
     if (!glfwInit()) return -1;
 
     GLFWwindow* window = glfwCreateWindow(1280, 720, "Coldstone Engine", NULL, NULL);
@@ -107,11 +116,15 @@ int main(void) {
     TextureHandle hFinalBloom;
 
     double lastTime = glfwGetTime();
+    double lastFrameTime = glfwGetTime();
     int nbFrames = 0;
     std::string fpsString = "0";
 
     while (!glfwWindowShouldClose(window)) {
         double currentTime = glfwGetTime();
+        float deltaTime = (float)(currentTime - lastFrameTime);
+        lastFrameTime = currentTime;
+
         nbFrames++;
         if (currentTime - lastTime >= 1.0) {
             fpsString = std::format("{}", nbFrames);
@@ -122,9 +135,16 @@ int main(void) {
         Input::Update();
         glfwPollEvents();
 
+        for (auto& obj : Scene::objects) {
+            if (obj.mesh && obj.mesh->boneCounter > 0) {
+                obj.animTime += deltaTime;
+                ModelLoader::UpdateAnimation(obj.mesh, obj.animTime, obj.boneTransforms);
+            }
+        }
+
         int width, height;
         glfwGetFramebufferSize(window, &width, &height);
-        camera.Update(0.016f, width, height);
+        camera.Update(deltaTime, width, height);
 
         gBufferFBO.Resize(width, height);
         lightingFBO.Resize(width, height);
@@ -167,9 +187,19 @@ int main(void) {
                     if (obj.material.transparency > 0.0f) continue;
                     glm::mat4 model = glm::mat4(1.0f);
                     model = glm::translate(model, obj.position);
+                    model = glm::rotate(model, glm::radians(obj.rotation.x), glm::vec3(1, 0, 0));
                     model = glm::rotate(model, glm::radians(obj.rotation.y), glm::vec3(0, 1, 0));
+                    model = glm::rotate(model, glm::radians(obj.rotation.z), glm::vec3(0, 0, 1));
                     model = glm::scale(model, obj.scale);
                     glCmd->setUniformMat4(shadowPipeline.shader, "model", model);
+                    if (obj.mesh->boneCounter > 0) {
+                        glCmd->setUniformInt(shadowPipeline.shader, "hasBones", 1);
+                        glCmd->setUniformMat4Array(shadowPipeline.shader, "boneMatrices", obj.boneTransforms);
+                    }
+                    else {
+                        glCmd->setUniformInt(shadowPipeline.shader, "hasBones", 0);
+                    }
+
                     glCmd->bindVertexArray(obj.mesh->VAO);
                     glCmd->drawIndexed((unsigned int)obj.mesh->indices.size());
                 }
@@ -210,13 +240,34 @@ int main(void) {
 
                     glm::mat4 model = glm::mat4(1.0f);
                     model = glm::translate(model, obj.position);
+                    model = glm::rotate(model, glm::radians(obj.rotation.x), glm::vec3(1, 0, 0));
                     model = glm::rotate(model, glm::radians(obj.rotation.y), glm::vec3(0, 1, 0));
+                    model = glm::rotate(model, glm::radians(obj.rotation.z), glm::vec3(0, 0, 1));
                     model = glm::scale(model, obj.scale);
                     glCmd->setUniformMat4(gBufferPipeline.shader, "model", model);
+                    if (obj.mesh->boneCounter > 0) {
+                        glCmd->setUniformInt(gBufferPipeline.shader, "hasBones", 1);
+                        glCmd->setUniformMat4Array(gBufferPipeline.shader, "boneMatrices", obj.boneTransforms);
+                    }
+                    else {
+                        glCmd->setUniformInt(gBufferPipeline.shader, "hasBones", 0);
+                    }
+
                     glCmd->setUniformVec3(gBufferPipeline.shader, "material.albedo", obj.material.albedo);
                     glCmd->setUniformFloat(gBufferPipeline.shader, "material.metallic", obj.material.metallic);
                     glCmd->setUniformFloat(gBufferPipeline.shader, "material.roughness", obj.material.roughness);
                     glCmd->setUniformVec3(gBufferPipeline.shader, "material.emission", obj.material.emission);
+
+                    if (obj.mesh->textureID != 0) {
+                        glActiveTexture(GL_TEXTURE0);
+                        glBindTexture(GL_TEXTURE_2D, obj.mesh->textureID);
+                        glCmd->setUniformInt(gBufferPipeline.shader, "albedoMap", 0);
+                        glCmd->setUniformInt(gBufferPipeline.shader, "hasAlbedoMap", 1);
+                    }
+                    else {
+                        glCmd->setUniformInt(gBufferPipeline.shader, "hasAlbedoMap", 0);
+                    }
+
                     glCmd->bindVertexArray(obj.mesh->VAO);
                     glCmd->drawIndexed((unsigned int)obj.mesh->indices.size());
                 }
@@ -315,7 +366,9 @@ int main(void) {
                     if (obj.material.transparency > 0.0f) {
                         glm::mat4 model = glm::mat4(1.0f);
                         model = glm::translate(model, obj.position);
+                        model = glm::rotate(model, glm::radians(obj.rotation.x), glm::vec3(1, 0, 0));
                         model = glm::rotate(model, glm::radians(obj.rotation.y), glm::vec3(0, 1, 0));
+                        model = glm::rotate(model, glm::radians(obj.rotation.z), glm::vec3(0, 0, 1));
                         model = glm::scale(model, obj.scale);
                         glCmd->setUniformMat4(forwardPipeline.shader, "model", model);
                         glCmd->setUniformVec3(forwardPipeline.shader, "color", obj.material.albedo);
@@ -351,7 +404,7 @@ int main(void) {
                 pingPongFBO[1].Finalize();
 
                 bool horizontal = true, first_iteration = true;
-                int amount = 6;
+                unsigned int amount = 6;
                 blurPipeline.Bind();
 
                 for (unsigned int i = 0; i < amount; i++) {
@@ -403,7 +456,7 @@ int main(void) {
                 glDisable(GL_DEPTH_TEST);
                 glEnable(GL_BLEND);
                 glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-                digitRenderer.RenderString(glCmd, fpsString, 10, height - 40, 1.0f, width, height);
+                digitRenderer.RenderString(glCmd, fpsString, 10.0f, (float)(height - 40), 1.0f, width, height);
                 glDisable(GL_BLEND);
             }
         );

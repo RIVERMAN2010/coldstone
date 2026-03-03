@@ -21,6 +21,7 @@ public:
     void setUniformVec2(Shader* shader, const std::string& name, const glm::vec2& vec);
     void setUniformFloat(Shader* shader, const std::string& name, float val);
     void setUniformInt(Shader* shader, const std::string& name, int val);
+    void setUniformMat4Array(Shader* shader, const std::string& name, const std::vector<glm::mat4>& mats);
 
 private:
     class RGRegistry* currentRegistry = nullptr;

@@ -1,8 +1,11 @@
 #pragma once
 #include <vector>
+#include <string>
 #include <glm/glm.hpp>
 #include "Mesh.h"
 #include "ModelLoader.h"
+
+extern std::string g_ExeDirectory;
 
 struct Material {
     glm::vec3 albedo;
@@ -34,6 +37,8 @@ struct GameObject {
     glm::vec3 scale;
     Material material;
     Mesh* mesh;
+    float animTime = 0.0f;
+    std::vector<glm::mat4> boneTransforms;
 };
 
 class Scene {
@@ -42,16 +47,24 @@ public:
     static Mesh cubeMesh;
     static Mesh floorMesh;
     static Mesh quadMesh;
+    static Mesh charMesh;
+    static Mesh animCharMesh;
 
     static void Initialize() {
         cubeMesh = ModelLoader::CreateCube();
         quadMesh = ModelLoader::CreateQuad();
         floorMesh = ModelLoader::CreateCube();
+        charMesh = ModelLoader::LoadMesh(g_ExeDirectory + "\\ExportChar.fbx");
+        animCharMesh = ModelLoader::LoadMesh(g_ExeDirectory + "\\AnimChar.fbx");
 
         objects.clear();
 
         // 1. Floor (Dark Concrete)
         objects.push_back({ {0, -1.0f, 0}, {0,0,0}, {50.0f, 0.2f, 50.0f}, { {0.2f, 0.2f, 0.2f}, 0.0f, 0.8f, {0,0,0}, 0.0f }, &floorMesh });
+
+        //char 
+        objects.push_back({ {0.0f, 0.0f, 4.0f}, {90.0f, 0.0f, 0.0f}, {0.15f, 0.15f, 0.15f}, { {1.0f, 1.0f, 1.0f}, 0.0f, 0.5f, {0,0,0}, 0.0f }, &charMesh });
+        objects.push_back({ { 1.5f, 0.0f, -4.0f}, {270.0f, 0.0f, 0.0f}, {0.15f, 0.15f, 0.15f}, { {1.0f, 1.0f, 1.0f}, 0.0f, 0.5f, {0,0,0}, 0.0f }, &animCharMesh });
 
         // 2. Metals (Left)
         objects.push_back({ {-6, 1, 0}, {0, 30, 0}, {1.5f, 1.5f, 1.5f}, Material::Gold(), &cubeMesh });
@@ -71,3 +84,5 @@ std::vector<GameObject> Scene::objects;
 Mesh Scene::cubeMesh;
 Mesh Scene::floorMesh;
 Mesh Scene::quadMesh;
+Mesh Scene::charMesh;
+Mesh Scene::animCharMesh;

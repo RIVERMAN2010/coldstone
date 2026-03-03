@@ -51,3 +51,8 @@ void GLCommandBuffer::setUniformFloat(Shader* shader, const std::string& name, f
 void GLCommandBuffer::setUniformInt(Shader* shader, const std::string& name, int val) {
     if (shader) shader->setInt(name, val);
 }
+void GLCommandBuffer::setUniformMat4Array(Shader* shader, const std::string& name, const std::vector<glm::mat4>& mats) {
+    if (shader && !mats.empty()) {
+        glUniformMatrix4fv(shader->getLocation(name), (GLsizei)mats.size(), GL_FALSE, &mats[0][0][0]);
+    }
+}

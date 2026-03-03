@@ -3,10 +3,26 @@
 inline const char* SHADOW_VS = R"(
 #version 460 core
 layout (location = 0) in vec3 aPos;
+layout (location = 4) in ivec4 aBoneIds;
+layout (location = 5) in vec4 aWeights;
 uniform mat4 lightSpaceMatrix;
 uniform mat4 model;
+const int MAX_BONES = 200;
+uniform mat4 boneMatrices[MAX_BONES];
+uniform int hasBones;
+
 void main() {
-    gl_Position = lightSpaceMatrix * model * vec4(aPos, 1.0);
+    vec4 totalPosition = vec4(0.0);
+    if (hasBones == 1) {
+        for(int i = 0 ; i < 4 ; i++) {
+            if(aBoneIds[i] == -1) continue;
+            if(aBoneIds[i] >= MAX_BONES) break;
+            totalPosition += boneMatrices[aBoneIds[i]] * vec4(aPos, 1.0) * aWeights[i];
+        }
+    } else {
+        totalPosition = vec4(aPos, 1.0);
+    }
+    gl_Position = lightSpaceMatrix * model * totalPosition;
 }
 )";
 
@@ -19,15 +35,40 @@ inline const char* GBUFFER_VS = R"(
 #version 460 core
 layout (location = 0) in vec3 aPos;
 layout (location = 1) in vec3 aNormal;
+layout (location = 2) in vec2 aTex;
+layout (location = 3) in vec4 aColor;
+layout (location = 4) in ivec4 aBoneIds;
+layout (location = 5) in vec4 aWeights;
 out vec3 FragPos;
 out vec3 Normal;
+out vec2 TexCoords;
+out vec4 VertexColor;
 uniform mat4 model;
 uniform mat4 view;
 uniform mat4 projection;
+const int MAX_BONES = 200;
+uniform mat4 boneMatrices[MAX_BONES];
+uniform int hasBones;
+
 void main() {
-    vec4 worldPos = model * vec4(aPos, 1.0);
+    vec4 totalPosition = vec4(0.0);
+    vec3 totalNormal = vec3(0.0);
+    if (hasBones == 1) {
+        for(int i = 0 ; i < 4 ; i++) {
+            if(aBoneIds[i] == -1) continue;
+            if(aBoneIds[i] >= MAX_BONES) break;
+            totalPosition += boneMatrices[aBoneIds[i]] * vec4(aPos, 1.0) * aWeights[i];
+            totalNormal += mat3(boneMatrices[aBoneIds[i]]) * aNormal * aWeights[i];
+        }
+    } else {
+        totalPosition = vec4(aPos, 1.0);
+        totalNormal = aNormal;
+    }
+    vec4 worldPos = model * totalPosition;
     FragPos = worldPos.xyz;
-    Normal = mat3(transpose(inverse(model))) * aNormal;
+    Normal = mat3(transpose(inverse(model))) * totalNormal;
+    TexCoords = aTex;
+    VertexColor = aColor;
     gl_Position = projection * view * worldPos;
 }
 )";
@@ -40,6 +81,8 @@ layout (location = 2) out vec4 gMaterial;
 
 in vec3 FragPos;
 in vec3 Normal;
+in vec2 TexCoords;
+in vec4 VertexColor;
 
 struct Material {
     vec3 albedo;
@@ -48,9 +91,15 @@ struct Material {
     vec3 emission;
 };
 uniform Material material;
+uniform sampler2D albedoMap;
+uniform int hasAlbedoMap;
 
 void main() {
-    gAlbedo = vec4(material.albedo, 1.0);
+    vec3 albedoColor = material.albedo * VertexColor.rgb;
+    if (hasAlbedoMap == 1) {
+        albedoColor = texture(albedoMap, TexCoords).rgb * VertexColor.rgb;
+    }
+    gAlbedo = vec4(albedoColor, 1.0);
     gNormal = vec4(normalize(Normal), 1.0);
     float emissionStrength = max(material.emission.r, max(material.emission.g, material.emission.b));
     gMaterial = vec4(material.metallic, material.roughness, emissionStrength, 1.0);
